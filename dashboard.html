@@ -646,7 +646,7 @@
   </main>
 
   <script>
-    const API_BASE = "http://127.0.0.1:5000/api";
+    const API_BASE = window.location.origin + "/api";
     let attendanceChart, gradesChart, trendChart;
     let studentsCache = [];
     let teachersCache = [];
@@ -682,17 +682,22 @@
       document.getElementById("user-name").textContent = parsed.full_name || parsed.username;
       currentUser = parsed;
       if (currentUser.role === "Teacher") {
-        teacherBand = currentUser.teacher_band || localStorage.getItem("spms_teacher_band");
+        teacherBand = currentUser.teacher_band;
         if (!teacherBand || !["JHS", "SHS"].includes(teacherBand)) {
-          const picked = window.prompt("Select your level (JHS or SHS):", teacherBand || "JHS");
-          if (picked && ["JHS","SHS"].includes(picked.toUpperCase())) {
-            teacherBand = picked.toUpperCase();
-            localStorage.setItem("spms_teacher_band", teacherBand);
+          // fallback to previous local storage only if none set on server
+          const cached = localStorage.getItem("spms_teacher_band");
+          if (cached && ["JHS","SHS"].includes(cached)) {
+            teacherBand = cached;
           } else {
-            teacherBand = "JHS";
-            localStorage.setItem("spms_teacher_band", teacherBand);
+            const picked = window.prompt("Select your level (JHS or SHS):", teacherBand || "JHS");
+            if (picked && ["JHS","SHS"].includes(picked.toUpperCase())) {
+              teacherBand = picked.toUpperCase();
+            } else {
+              teacherBand = "JHS";
+            }
           }
         }
+        localStorage.setItem("spms_teacher_band", teacherBand);
       }
       return parsed;
     }
@@ -712,6 +717,7 @@
     async function fetchJSON(path, options = {}) {
       const headers = { "Content-Type": "application/json" };
       if (currentUser?.role) headers["X-User-Role"] = currentUser.role;
+      if (currentUser?.role === "Teacher" && teacherBand) headers["X-Teacher-Band"] = teacherBand;
       const res = await fetch(`${API_BASE}${path}`, {
         headers: { ...headers, ...(options.headers || {}) },
         ...options,
@@ -1618,7 +1624,23 @@
       }
     }
 
+    async function refreshUserBand() {
+      if (!currentUser || currentUser.role !== "Teacher") return;
+      try {
+        const data = await fetchJSON(`/users?user_id=${currentUser.id}`);
+        if (Array.isArray(data) && data.length === 1) {
+          const u = data[0];
+          currentUser.teacher_band = u.teacher_band;
+          teacherBand = u.teacher_band || teacherBand;
+          if (teacherBand) localStorage.setItem("spms_teacher_band", teacherBand);
+        }
+      } catch (ex) {
+        console.warn("Could not refresh user band", ex);
+      }
+    }
+
     async function refreshAll() {
+      await refreshUserBand();
       await Promise.all([
         loadDashboard(),
         loadStudents(),

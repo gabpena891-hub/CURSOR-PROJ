@@ -10,19 +10,19 @@
   <style>
     :root {
       --bg: #0f172a;
-      --card-bg: rgba(30, 41, 59, 0.7);
-      --border: rgba(255, 255, 255, 0.1);
+      --card-bg: rgba(30, 41, 59, 0.75);
+      --border: rgba(255, 255, 255, 0.08);
       --accent: #6366f1;
       --accent-hover: #4f46e5;
       --text: #f8fafc;
       --muted: #94a3b8;
+      --input-bg: rgba(15, 23, 42, 0.5);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: "Inter", sans-serif;
       background-color: var(--bg);
-      /* Modern mesh gradient background */
       background-image: 
         radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
         radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
@@ -32,67 +32,78 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 24px;
+      padding: 20px;
     }
+
     .card {
       background: var(--card-bg);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--border);
       border-radius: 24px;
       width: 100%;
-      max-width: 400px;
-      padding: 40px;
+      max-width: 420px;
+      padding: 48px 40px;
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-      animation: floatUp 0.6s ease-out;
-      text-align: center; /* Ensures content is centered */
+      text-align: center;
+      position: relative;
+      overflow: hidden;
     }
-    @keyframes floatUp {
-      from { opacity: 0; transform: translateY(20px); }
+
+    /* Animation for switching views */
+    .fade-in { animation: fadeIn 0.4s ease forwards; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
-    
-    /* Logo Styling */
+
     .logo-container {
       margin-bottom: 24px;
       display: inline-flex;
       padding: 12px;
       background: rgba(99, 102, 241, 0.1);
-      border-radius: 16px;
+      border-radius: 18px;
       border: 1px solid rgba(99, 102, 241, 0.2);
-      box-shadow: 0 0 20px rgba(99, 102, 241, 0.1);
+      box-shadow: 0 0 25px rgba(99, 102, 241, 0.15);
     }
 
-    h1 { margin: 0 0 8px; font-size: 24px; font-weight: 700; letter-spacing: -0.025em; text-align: center; }
-    p { margin: 0 0 32px; color: var(--muted); font-size: 14px; text-align: center; }
+    h1 { margin: 0 0 8px; font-size: 26px; font-weight: 700; letter-spacing: -0.03em; }
+    p { margin: 0 0 32px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+
+    /* Clean Form Styles */
+    .form-group { margin-bottom: 20px; text-align: left; }
     
     label { 
       display: block; 
       margin-bottom: 8px; 
-      color: var(--text); 
-      font-size: 13px; 
-      font-weight: 500; 
-      text-align: left; /* Keep labels left-aligned */
+      color: var(--muted); 
+      font-size: 12px; 
+      font-weight: 600; 
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-left: 4px;
     }
+
     input {
       width: 100%;
-      padding: 12px 16px;
+      padding: 14px 16px;
       border-radius: 12px;
       border: 1px solid var(--border);
-      background: rgba(15, 23, 42, 0.6);
+      background: var(--input-bg);
       color: var(--text);
-      font-size: 14px;
-      margin-bottom: 20px;
+      font-size: 15px;
       outline: none;
       transition: all 0.2s ease;
       font-family: inherit;
     }
+    input::placeholder { color: rgba(148, 163, 184, 0.5); }
     input:focus {
       border-color: var(--accent);
       background: rgba(15, 23, 42, 0.8);
       box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
     }
-    button {
+
+    button.primary-btn {
       width: 100%;
       padding: 14px;
       background: var(--accent);
@@ -100,153 +111,216 @@
       border-radius: 12px;
       color: white;
       font-weight: 600;
-      font-size: 14px;
+      font-size: 15px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 10px;
+    }
+    button.primary-btn:hover { 
+      background: var(--accent-hover); 
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3); 
+    }
+
+    /* Tabs for Signup */
+    .tabs {
+      display: flex;
+      background: rgba(0,0,0,0.2);
+      padding: 4px;
+      border-radius: 12px;
+      margin-bottom: 24px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 8px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 8px;
       cursor: pointer;
       transition: all 0.2s;
     }
-    button:hover { 
-      background: var(--accent-hover); 
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3); 
+    .tab-btn.active {
+      background: var(--card-bg); /* Match card or slightly lighter */
+      background: rgba(255,255,255,0.1);
+      color: white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     }
-    button:active { transform: translateY(0); }
-    
-    .separator {
-      margin: 24px 0; 
-      color: var(--muted); 
-      text-align: center; 
-      font-size: 12px;
-      position: relative;
-    }
-    .separator::before, .separator::after {
-      content: "";
-      position: absolute;
-      top: 50%;
-      width: 35%;
-      height: 1px;
-      background: var(--border);
-    }
-    .separator::before { left: 0; }
-    .separator::after { right: 0; }
 
-    .toggle-container { text-align: center; font-size: 14px; }
-    a { color: var(--accent); text-decoration: none; font-weight: 500; transition: color 0.2s; }
-    a:hover { color: #818cf8; }
+    /* Toggle Link Area */
+    .toggle-container { margin-top: 32px; font-size: 14px; color: var(--muted); }
+    .toggle-container a { 
+      color: var(--accent); 
+      text-decoration: none; 
+      font-weight: 600; 
+      transition: color 0.2s;
+      margin-left: 4px;
+    }
+    .toggle-container a:hover { color: #818cf8; text-decoration: underline; }
 
+    /* Utilities */
     .error { 
       color: #fca5a5; 
-      background: rgba(127, 29, 29, 0.2); 
+      background: rgba(127, 29, 29, 0.25); 
       border: 1px solid rgba(248, 113, 113, 0.2); 
       padding: 12px; 
       border-radius: 10px; 
-      margin-bottom: 20px; 
+      margin-bottom: 24px; 
       font-size: 13px;
-      display: none; 
       text-align: center;
+      display: none;
     }
+    .info-badge {
+      display: inline-block;
+      font-size: 11px;
+      background: rgba(255,255,255,0.05);
+      padding: 4px 8px;
+      border-radius: 6px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .hidden { display: none; }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="logo-container">
-      <svg width="48" height="48" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <svg width="40" height="40" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M16 1L28.99 8.5V23.5L16 31L3.01 23.5V8.5L16 1Z" fill="rgba(99, 102, 241, 0.2)" stroke="#6366f1" stroke-width="2" stroke-linejoin="round"/>
         <path d="M8 16H12L15 11L19 21L22 16H26" stroke="#f8fafc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </div>
 
-    <h1 id="card-title">Welcome Back</h1>
-    <p>Student Performance Monitoring System</p>
     <div id="error" class="error"></div>
-    
-    <form id="login-form">
-      <label for="username">Username</label>
-      <input id="username" name="username" placeholder="Enter your username" required />
-      
-      <label for="password">Password</label>
-      <input id="password" name="password" type="password" placeholder="••••••••" required />
-      
-      <button type="submit">Sign In</button>
-    </form>
 
-    <div class="separator">OR</div>
+    <div id="view-login" class="fade-in">
+      <h1>Welcome Back</h1>
+      <p>Enter your credentials to access the portal.</p>
+      
+      <form id="login-form">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input id="username" name="username" placeholder="e.g. johndoe" required />
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" placeholder="••••••••" required />
+        </div>
+        <button type="submit" class="primary-btn">Sign In</button>
+      </form>
 
-    <form id="signup-form" style="display:none;">
-      <label for="su-fullname">Full Name</label>
-      <input id="su-fullname" name="fullname" placeholder="John Doe" required />
-      
-      <label for="su-username">Username</label>
-      <input id="su-username" name="username" placeholder="Choose a username" required />
-      
-      <label for="su-password">Password</label>
-      <input id="su-password" name="password" type="password" placeholder="Create a password" required />
-      
-      <label for="su-studentnum">Child's Student Number</label>
-      <input id="su-studentnum" name="student_number" placeholder="Last 5 digits (e.g. 01234)" maxlength="5" pattern="\d{5}" inputmode="numeric" required />
-      
-      <button type="submit">Create Account</button>
-    </form>
+      <div class="toggle-container">
+        New here? <a href="#" onclick="switchView('signup')">Create an account</a>
+      </div>
+    </div>
 
-    <form id="teacher-signup-form" style="display:none;">
-      <label for="ts-fullname">Full Name</label>
-      <input id="ts-fullname" placeholder="Jane Smith" required />
-      <label for="ts-username">Username</label>
-      <input id="ts-username" placeholder="Choose a username" required />
-      <label for="ts-password">Password</label>
-      <input id="ts-password" type="password" placeholder="Create a password" required />
-      <button type="submit">Request Teacher Account</button>
-      <div style="font-size:12px; color: var(--muted); margin-top:6px;">Requires admin approval.</div>
-    </form>
+    <div id="view-signup" class="fade-in hidden">
+      <h1>Create Account</h1>
+      <p style="margin-bottom: 20px;">Select your account type below.</p>
 
-    <div class="toggle-container">
-      <a href="#" id="toggle-link">Create a parent account</a> · <a href="#" id="teacher-link">Teacher signup</a>
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('parent')" id="tab-parent">Parent</button>
+        <button class="tab-btn" onclick="switchTab('teacher')" id="tab-teacher">Teacher</button>
+      </div>
+
+      <form id="signup-parent-form">
+        <div class="form-group">
+          <label>Full Name</label>
+          <input id="su-fullname" placeholder="John Doe" required />
+        </div>
+        <div class="form-group">
+          <label>Username</label>
+          <input id="su-username" placeholder="Choose a username" required />
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input id="su-password" type="password" placeholder="Create a password" required />
+        </div>
+        <div class="form-group">
+          <label>Child's Student Number</label>
+          <input id="su-studentnum" placeholder="Last 5 digits (e.g. 01234)" maxlength="5" pattern="\d{5}" inputmode="numeric" required />
+        </div>
+        <button type="submit" class="primary-btn">Create Parent Account</button>
+      </form>
+
+      <form id="signup-teacher-form" class="hidden">
+        <div class="form-group">
+          <label>Full Name</label>
+          <input id="ts-fullname" placeholder="Jane Smith" required />
+        </div>
+        <div class="form-group">
+          <label>Username</label>
+          <input id="ts-username" placeholder="Choose a username" required />
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input id="ts-password" type="password" placeholder="Create a password" required />
+        </div>
+        <div class="info-badge">ℹ️ Teacher accounts require admin approval</div>
+        <button type="submit" class="primary-btn">Request Teacher Access</button>
+      </form>
+
+      <div class="toggle-container">
+        Already have an account? <a href="#" onclick="switchView('login')">Sign in</a>
+      </div>
     </div>
   </div>
 
   <script>
-    const API_BASE = "http://127.0.0.1:5000/api";
-    const form = document.getElementById("login-form");
+    const API_BASE = window.location.origin + "/api";
     const errorBox = document.getElementById("error");
-    const signupForm = document.getElementById("signup-form");
-    const toggleLink = document.getElementById("toggle-link");
-    const cardTitle = document.getElementById("card-title");
-    const teacherForm = document.getElementById("teacher-signup-form");
-    let showSignup = false;
-    let showTeacher = false;
 
-    toggleLink.addEventListener("click", (e) => {
-      e.preventDefault();
-      showSignup = !showSignup;
-      showTeacher = false;
-      signupForm.style.display = showSignup ? "block" : "none";
-      form.style.display = showSignup ? "none" : "block";
-      teacherForm.style.display = "none";
-      toggleLink.textContent = showSignup ? "Back to login" : "Create a parent account";
-      cardTitle.textContent = showSignup ? "Parent Sign Up" : "Welcome Back";
-      errorBox.style.display = "none";
-      // Hide/Show separator based on view
-      document.querySelector('.separator').style.display = showSignup ? 'none' : 'block';
-    });
+    // View Switching Logic
+    function switchView(viewName) {
+      errorBox.style.display = 'none';
+      errorBox.textContent = '';
+      
+      const loginView = document.getElementById("view-login");
+      const signupView = document.getElementById("view-signup");
 
-    document.getElementById("teacher-link").addEventListener("click", (e) => {
-      e.preventDefault();
-      showTeacher = !showTeacher;
-      showSignup = false;
-      teacherForm.style.display = showTeacher ? "block" : "none";
-      signupForm.style.display = "none";
-      form.style.display = showTeacher ? "none" : "block";
-      toggleLink.textContent = "Create a parent account";
-      cardTitle.textContent = showTeacher ? "Teacher Sign Up" : "Welcome Back";
-      errorBox.style.display = "none";
-      document.querySelector('.separator').style.display = showTeacher ? 'none' : 'block';
-    });
+      if (viewName === 'signup') {
+        loginView.classList.add("hidden");
+        signupView.classList.remove("hidden");
+      } else {
+        signupView.classList.add("hidden");
+        loginView.classList.remove("hidden");
+      }
+    }
 
-    form.addEventListener("submit", async (e) => {
+    // Tab Switching Logic (Parent vs Teacher)
+    function switchTab(type) {
+      errorBox.style.display = 'none';
+      
+      const parentForm = document.getElementById("signup-parent-form");
+      const teacherForm = document.getElementById("signup-teacher-form");
+      const tabParent = document.getElementById("tab-parent");
+      const tabTeacher = document.getElementById("tab-teacher");
+
+      if (type === 'parent') {
+        parentForm.classList.remove("hidden");
+        teacherForm.classList.add("hidden");
+        tabParent.classList.add("active");
+        tabTeacher.classList.remove("active");
+      } else {
+        parentForm.classList.add("hidden");
+        teacherForm.classList.remove("hidden");
+        tabParent.classList.remove("active");
+        tabTeacher.classList.add("active");
+      }
+    }
+
+    // --- FORM HANDLERS ---
+
+    // Login
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       errorBox.style.display = "none";
       const payload = {
-        username: form.username.value.trim(),
-        password: form.password.value.trim(),
+        username: document.getElementById("username").value.trim(),
+        password: document.getElementById("password").value.trim(),
       };
       try {
         const res = await fetch(`${API_BASE}/login`, {
@@ -259,26 +333,24 @@
         localStorage.setItem("spms_user", JSON.stringify(data));
         window.location.href = "dashboard.html";
       } catch (err) {
-        errorBox.textContent = err.message;
-        errorBox.style.display = "block";
+        showError(err.message);
       }
     });
 
-    signupForm.addEventListener("submit", async (e) => {
+    // Parent Signup
+    document.getElementById("signup-parent-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       errorBox.style.display = "none";
       const raw = document.getElementById("su-studentnum").value.trim();
       if (!/^\d{5}$/.test(raw)) {
-        errorBox.textContent = "Enter last 5 digits (numbers only).";
-        errorBox.style.display = "block";
+        showError("Student number must be exactly the last 5 digits.");
         return;
       }
-      const formattedNumber = `STU-${raw}`;
       const payload = {
         username: document.getElementById("su-username").value.trim(),
         password: document.getElementById("su-password").value.trim(),
         full_name: document.getElementById("su-fullname").value.trim(),
-        student_number: formattedNumber,
+        student_number: `STU-${raw}`,
       };
       try {
         const res = await fetch(`${API_BASE}/signup/parent`, {
@@ -288,7 +360,7 @@
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Signup failed");
-        // Auto-login after signup
+        // Auto-login
         localStorage.setItem("spms_user", JSON.stringify({
           id: data.id,
           username: payload.username,
@@ -297,12 +369,12 @@
         }));
         window.location.href = "dashboard.html";
       } catch (err) {
-        errorBox.textContent = err.message;
-        errorBox.style.display = "block";
+        showError(err.message);
       }
     });
 
-    teacherForm.addEventListener("submit", async (e) => {
+    // Teacher Signup
+    document.getElementById("signup-teacher-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       errorBox.style.display = "none";
       const payload = {
@@ -316,20 +388,32 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Signup failed");
-        errorBox.textContent = "Signup submitted. Await admin approval.";
-        errorBox.style.display = "block";
-        errorBox.style.background = "rgba(16,185,129,0.2)";
-        errorBox.style.borderColor = "rgba(16,185,129,0.3)";
-        teacherForm.reset();
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "Signup failed");
+        }
+        showSuccess("Request submitted! Please wait for admin approval.");
+        document.getElementById("signup-teacher-form").reset();
       } catch (err) {
-        errorBox.textContent = err.message;
-        errorBox.style.display = "block";
-        errorBox.style.background = "";
-        errorBox.style.borderColor = "";
+        showError(err.message);
       }
     });
+
+    function showError(msg) {
+      errorBox.textContent = msg;
+      errorBox.style.display = "block";
+      errorBox.style.background = "rgba(127, 29, 29, 0.25)";
+      errorBox.style.borderColor = "rgba(248, 113, 113, 0.2)";
+      errorBox.style.color = "#fca5a5";
+    }
+
+    function showSuccess(msg) {
+      errorBox.textContent = msg;
+      errorBox.style.display = "block";
+      errorBox.style.background = "rgba(16, 185, 129, 0.2)";
+      errorBox.style.borderColor = "rgba(16, 185, 129, 0.3)";
+      errorBox.style.color = "#6ee7b7";
+    }
   </script>
 </body>
 </html>

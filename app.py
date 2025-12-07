@@ -1,8 +1,7 @@
 import os
-import urllib.parse
 from datetime import date, datetime
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory, abort
 from flask_cors import CORS
 from sqlalchemy import (Column, Date, DateTime, DECIMAL, ForeignKey, Integer,
                         String, Text, create_engine, func, text, case, and_, or_)
@@ -10,30 +9,35 @@ from sqlalchemy.orm import declarative_base, relationship, scoped_session, sessi
 from sqlalchemy.exc import IntegrityError
 
 # Flask setup with CORS for local frontend (e.g., http://127.0.0.1:5500) and file://
-app = Flask(__name__)
+app = Flask(__name__, static_folder=".", static_url_path="")
 CORS(
     app,
     resources={r"/api/*": {"origins": ["*", "http://127.0.0.1:5500", "http://localhost:5500", "null"]}},
 )
 
-# Database configuration for local SQL Server using Windows Authentication
-default_odbc = (
-    "DRIVER={ODBC Driver 18 for SQL Server};"
-    "SERVER=localhost;"
-    "DATABASE=StudentDB;"
-    "Trusted_Connection=yes;"
-    "TrustServerCertificate=yes;"
-)
-odbc_conn_str = os.getenv("STUDENT_DB_ODBC", default_odbc)
-odbc_params = urllib.parse.quote_plus(odbc_conn_str)
+# Database configuration
+db_url = os.environ.get("DATABASE_URL")
+if db_url and db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+if not db_url:
+    db_url = "sqlite:///local.db"
 
-engine = create_engine(
-    f"mssql+pyodbc:///?odbc_connect={odbc_params}",
-    pool_pre_ping=True,
-    pool_recycle=1800,
-)
+engine = create_engine(db_url, pool_pre_ping=True, pool_recycle=1800)
 SessionLocal = scoped_session(sessionmaker(bind=engine))
 Base = declarative_base()
+
+
+# Static file serving for Render/static hosting
+@app.route("/")
+def serve_index():
+    return app.send_static_file("index.html")
+
+
+@app.route("/<path:path>")
+def serve_static_file(path):
+    if path.startswith("api/"):
+        return abort(404)
+    return send_from_directory(app.static_folder, path)
 
 
 # ORM models
@@ -237,6 +241,28 @@ def require_admin():
     return None
 
 
+def parse_band_from_grade(grade_str: str):
+    try:
+        g = int(grade_str)
+    except Exception:
+        return None
+    if 7 <= g <= 10:
+        return "JHS"
+    if 11 <= g <= 12:
+        return "SHS"
+    return None
+
+
+def current_teacher_band():
+    role = request.headers.get("X-User-Role")
+    if role != "Teacher":
+        return None
+    band = request.headers.get("X-Teacher-Band")
+    if band in ("JHS", "SHS"):
+        return band
+    return None
+
+
 # Create missing tables (Communications, Subjects) without touching existing ones
 try:
     Base.metadata.create_all(
@@ -299,7 +325,14 @@ def get_students():
         return error_response(500, "Database connection failed", str(exc))
     session = session_or_none
     try:
-        students = session.query(Student).all()
+        band = current_teacher_band()
+        students_query = session.query(Student)
+        if band:
+            students = [
+                s for s in students_query.all() if parse_band_from_grade(s.grade_level) == band
+            ]
+        else:
+            students = students_query.all()
         result = [
             {
                 "id": s.id,
@@ -477,10 +510,19 @@ def list_grades():
         return error_response(500, "Database connection failed", str(exc))
     session = session_or_none
     try:
+        band = current_teacher_band()
         query = session.query(Grade)
         if student_id:
             query = query.filter(Grade.student_id == student_id)
-        grades = query.order_by(Grade.recorded_on.desc()).all()
+        if band:
+            # Filter by student band
+            grades = []
+            for g in query.order_by(Grade.recorded_on.desc()).all():
+                st = session.query(Student).filter_by(id=g.student_id).first()
+                if st and parse_band_from_grade(st.grade_level) == band:
+                    grades.append(g)
+        else:
+            grades = query.order_by(Grade.recorded_on.desc()).all()
         return jsonify(
             [
                 {
@@ -678,6 +720,7 @@ def create_communication():
 @app.route("/api/users", methods=["GET"])
 def list_users():
     role = request.args.get("role")
+    user_id = request.args.get("user_id", type=int)
     pending_only = request.args.get("pending", type=int)
     session_or_none = get_session()
     if isinstance(session_or_none, tuple):
@@ -686,6 +729,8 @@ def list_users():
     session = session_or_none
     try:
         query = session.query(User.id, User.username, User.full_name, User.role, User.approved, User.teacher_band)
+        if user_id:
+            query = query.filter(User.id == user_id)
         if role:
             query = query.filter(User.role == role)
         if pending_only:
@@ -982,9 +1027,12 @@ def list_subjects():
         return error_response(500, "Database connection failed", str(exc))
     session = session_or_none
     try:
+        band_header = current_teacher_band()
         query = session.query(Subject)
         if level_band:
             query = query.filter(Subject.level_band == level_band)
+        if band_header:
+            query = query.filter(Subject.level_band == band_header)
         if track:
             query = query.filter(Subject.track == track)
         if category:
@@ -1149,10 +1197,18 @@ def list_attendance():
         return error_response(500, "Database connection failed", str(exc))
     session = session_or_none
     try:
+        band = current_teacher_band()
         query = session.query(Attendance)
         if student_id:
             query = query.filter(Attendance.student_id == student_id)
-        records = query.order_by(Attendance.attendance_date.desc()).all()
+        if band:
+            records = []
+            for r in query.order_by(Attendance.attendance_date.desc()).all():
+                st = session.query(Student).filter_by(id=r.student_id).first()
+                if st and parse_band_from_grade(st.grade_level) == band:
+                    records.append(r)
+        else:
+            records = query.order_by(Attendance.attendance_date.desc()).all()
         return jsonify(
             [
                 {
