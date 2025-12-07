@@ -68,6 +68,46 @@ def admin_init():
     return error_response(500, "Init failed", msg)
 
 
+@app.route("/api/admin/seed-admin", methods=["POST", "GET"])
+def admin_seed():
+    # Protect with ADMIN_INIT_TOKEN if set
+    token = os.environ.get("ADMIN_INIT_TOKEN")
+    if token:
+        provided = request.headers.get("X-Admin-Init-Token") or request.args.get("token")
+        if provided != token:
+            return error_response(403, "Forbidden")
+
+    username = "gabpena891@gmail.com"
+    password = "chin1979"
+    full_name = "Admin User"
+
+    session_or_none = get_session()
+    if isinstance(session_or_none, tuple):
+        session, exc = session_or_none
+        return error_response(500, "Database connection failed", str(exc))
+    session = session_or_none
+    try:
+        exists = session.query(User).filter_by(username=username).first()
+        if exists:
+            return jsonify({"message": "Admin already exists"})
+        user = User(
+            username=username,
+            password_hash=password,
+            role="Admin",
+            full_name=full_name,
+            approved=1,
+            teacher_band=None,
+        )
+        session.add(user)
+        session.commit()
+        return jsonify({"message": "Admin seeded"})
+    except Exception as exc:
+        session.rollback()
+        return error_response(500, "Unexpected error", str(exc))
+    finally:
+        session.close()
+
+
 # ORM models
 class User(Base):
     __tablename__ = "users"
