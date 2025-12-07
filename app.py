@@ -26,6 +26,7 @@ if not db_url:
 engine = create_engine(db_url, pool_pre_ping=True, pool_recycle=1800)
 SessionLocal = scoped_session(sessionmaker(bind=engine))
 Base = declarative_base()
+logging.basicConfig(level=logging.INFO)
 
 def init_db():
     try:
@@ -38,6 +39,8 @@ def init_db():
 
 # Ensure tables exist (idempotent; safe for first run on Render/sqlite)
 init_db()
+with app.app_context():
+    init_db()
 
 
 # Static file serving for Render/static hosting
