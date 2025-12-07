@@ -847,6 +847,24 @@
           sheetSelect.appendChild(mkOpt(sub.name, `${sub.name} (${sub.level_band}${sub.category ? " • " + sub.category : ""}${sub.track ? " • " + sub.track : ""})`));
         });
       }
+
+      // populate grades tab subject filter
+      const gradeSubSel = document.getElementById("grade-subject");
+      if (gradeSubSel) {
+        const current = gradeSubSel.value;
+        gradeSubSel.innerHTML = "";
+        const mkOpt2 = (val, text, selected = false) => {
+          const o = document.createElement("option");
+          o.value = val;
+          o.textContent = text;
+          if (selected) o.selected = true;
+          return o;
+        };
+        gradeSubSel.appendChild(mkOpt2("", "All subjects", !current));
+        subjects.forEach(sub => {
+          gradeSubSel.appendChild(mkOpt2(sub.name, sub.name, current === sub.name));
+        });
+      }
     }
 
     function populateGradeSubjects() {

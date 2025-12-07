@@ -293,6 +293,73 @@ def admin_patch_grades_schema():
         return error_response(500, "Patch failed", str(exc))
 
 
+@app.route("/api/admin/migrate-uppercase", methods=["POST", "GET"])
+def admin_migrate_uppercase():
+    """
+    One-time helper: copies data from quoted/uppercase tables ("Users", "Students")
+    into the lowercase tables (users, students) used by the app. Only copies if
+    the lowercase table is empty. Protect with ADMIN_INIT_TOKEN if set.
+    """
+    token = os.environ.get("ADMIN_INIT_TOKEN")
+    if token:
+        provided = request.headers.get("X-Admin-Init-Token") or request.args.get("token")
+        if provided != token:
+            return error_response(403, "Forbidden")
+
+    try:
+        with engine.begin() as conn:
+            # Users
+            lower_users_count = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
+            upper_users_exists = conn.execute(
+                text("SELECT to_regclass('\"Users\"') is not null")
+            ).scalar()
+            migrated_users = 0
+            if lower_users_count == 0 and upper_users_exists:
+                rows = conn.execute(text('SELECT username, password_hash, role, full_name, approved, teacher_band, created_at FROM "Users"')).fetchall()
+                for r in rows:
+                    conn.execute(
+                        text(
+                            "INSERT INTO users (username, password_hash, role, full_name, approved, teacher_band, created_at) "
+                            "VALUES (:u,:p,:r,:f,:a,:b,:c)"
+                        ),
+                        {"u": r[0], "p": r[1], "r": r[2], "f": r[3], "a": r[4], "b": r[5], "c": r[6]},
+                    )
+                    migrated_users += 1
+
+            # Students
+            lower_students_count = conn.execute(text("SELECT COUNT(*) FROM students")).scalar()
+            upper_students_exists = conn.execute(
+                text("SELECT to_regclass('\"Students\"') is not null")
+            ).scalar()
+            migrated_students = 0
+            if lower_students_count == 0 and upper_students_exists:
+                rows = conn.execute(
+                    text('SELECT student_number, first_name, middle_name, last_name, date_of_birth, grade_level, homeroom_teacher, created_at FROM "Students"')
+                ).fetchall()
+                for r in rows:
+                    conn.execute(
+                        text(
+                            "INSERT INTO students (student_number, first_name, middle_name, last_name, date_of_birth, grade_level, homeroom_teacher, created_at) "
+                            "VALUES (:sn,:fn,:mn,:ln,:dob,:gl,:hr,:ca)"
+                        ),
+                        {
+                            "sn": r[0],
+                            "fn": r[1],
+                            "mn": r[2],
+                            "ln": r[3],
+                            "dob": r[4],
+                            "gl": r[5],
+                            "hr": r[6],
+                            "ca": r[7],
+                        },
+                    )
+                    migrated_students += 1
+
+        return jsonify({"message": "Migration complete", "users_migrated": migrated_users, "students_migrated": migrated_students})
+    except Exception as exc:
+        return error_response(500, "Migration failed", str(exc))
+
+
 # ORM models
 class User(Base):
     __tablename__ = "users"
