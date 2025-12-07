@@ -1,4 +1,5 @@
 import os
+import logging
 from datetime import date, datetime
 
 from flask import Flask, jsonify, request, send_from_directory, abort
@@ -26,12 +27,17 @@ engine = create_engine(db_url, pool_pre_ping=True, pool_recycle=1800)
 SessionLocal = scoped_session(sessionmaker(bind=engine))
 Base = declarative_base()
 
+def init_db():
+    try:
+        Base.metadata.create_all(bind=engine)
+        return True, "tables ensured"
+    except Exception as exc:
+        logging.warning("DB init failed: %s", exc)
+        return False, str(exc)
+
+
 # Ensure tables exist (idempotent; safe for first run on Render/sqlite)
-try:
-    Base.metadata.create_all(bind=engine)
-except Exception:
-    # Non-fatal; will surface on requests if missing
-    pass
+init_db()
 
 
 # Static file serving for Render/static hosting
@@ -45,6 +51,18 @@ def serve_static_file(path):
     if path.startswith("api/"):
         return abort(404)
     return send_from_directory(app.static_folder, path)
+
+@app.route("/api/admin/init", methods=["POST", "GET"])
+def admin_init():
+    token = os.environ.get("ADMIN_INIT_TOKEN")
+    if token:
+        provided = request.headers.get("X-Admin-Init-Token") or request.args.get("token")
+        if provided != token:
+            return error_response(403, "Forbidden")
+    ok, msg = init_db()
+    if ok:
+        return jsonify({"message": msg})
+    return error_response(500, "Init failed", msg)
 
 
 # ORM models
