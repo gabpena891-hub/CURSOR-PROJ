@@ -613,8 +613,12 @@
       document.querySelectorAll(".delete-student").forEach(btn => {
         btn.onclick = async () => {
           if (!confirm("Delete this student (and related records)?")) return;
-          await fetchJSON(`/students/${btn.dataset.id}`, { method: "DELETE" });
-          await refreshAll();
+          try {
+            await fetchJSON(`/students/${btn.dataset.id}`, { method: "DELETE" });
+            await refreshAll();
+          } catch (ex) {
+            alert(ex.message || "Failed to delete student.");
+          }
         };
       });
     }

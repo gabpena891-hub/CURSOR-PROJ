@@ -339,6 +339,11 @@ def delete_student(student_id: int):
         student = session.query(Student).filter_by(id=student_id).first()
         if not student:
             return error_response(404, "Student not found")
+        # Clean up dependent records to satisfy FK constraints
+        session.query(Grade).filter_by(student_id=student_id).delete(synchronize_session=False)
+        session.query(Attendance).filter_by(student_id=student_id).delete(synchronize_session=False)
+        session.query(BehaviorReport).filter_by(student_id=student_id).delete(synchronize_session=False)
+        session.query(CommunicationMessage).filter_by(student_id=student_id).delete(synchronize_session=False)
         session.delete(student)
         session.commit()
         return jsonify({"message": "Student deleted"})
