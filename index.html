@@ -187,8 +187,19 @@
       <button type="submit">Create Account</button>
     </form>
 
+    <form id="teacher-signup-form" style="display:none;">
+      <label for="ts-fullname">Full Name</label>
+      <input id="ts-fullname" placeholder="Jane Smith" required />
+      <label for="ts-username">Username</label>
+      <input id="ts-username" placeholder="Choose a username" required />
+      <label for="ts-password">Password</label>
+      <input id="ts-password" type="password" placeholder="Create a password" required />
+      <button type="submit">Request Teacher Account</button>
+      <div style="font-size:12px; color: var(--muted); margin-top:6px;">Requires admin approval.</div>
+    </form>
+
     <div class="toggle-container">
-      <a href="#" id="toggle-link">Create a parent account</a>
+      <a href="#" id="toggle-link">Create a parent account</a> · <a href="#" id="teacher-link">Teacher signup</a>
     </div>
   </div>
 
@@ -199,18 +210,35 @@
     const signupForm = document.getElementById("signup-form");
     const toggleLink = document.getElementById("toggle-link");
     const cardTitle = document.getElementById("card-title");
+    const teacherForm = document.getElementById("teacher-signup-form");
     let showSignup = false;
+    let showTeacher = false;
 
     toggleLink.addEventListener("click", (e) => {
       e.preventDefault();
       showSignup = !showSignup;
+      showTeacher = false;
       signupForm.style.display = showSignup ? "block" : "none";
       form.style.display = showSignup ? "none" : "block";
+      teacherForm.style.display = "none";
       toggleLink.textContent = showSignup ? "Back to login" : "Create a parent account";
       cardTitle.textContent = showSignup ? "Parent Sign Up" : "Welcome Back";
       errorBox.style.display = "none";
       // Hide/Show separator based on view
       document.querySelector('.separator').style.display = showSignup ? 'none' : 'block';
+    });
+
+    document.getElementById("teacher-link").addEventListener("click", (e) => {
+      e.preventDefault();
+      showTeacher = !showTeacher;
+      showSignup = false;
+      teacherForm.style.display = showTeacher ? "block" : "none";
+      signupForm.style.display = "none";
+      form.style.display = showTeacher ? "none" : "block";
+      toggleLink.textContent = "Create a parent account";
+      cardTitle.textContent = showTeacher ? "Teacher Sign Up" : "Welcome Back";
+      errorBox.style.display = "none";
+      document.querySelector('.separator').style.display = showTeacher ? 'none' : 'block';
     });
 
     form.addEventListener("submit", async (e) => {
@@ -271,6 +299,35 @@
       } catch (err) {
         errorBox.textContent = err.message;
         errorBox.style.display = "block";
+      }
+    });
+
+    teacherForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorBox.style.display = "none";
+      const payload = {
+        username: document.getElementById("ts-username").value.trim(),
+        password: document.getElementById("ts-password").value.trim(),
+        full_name: document.getElementById("ts-fullname").value.trim(),
+      };
+      try {
+        const res = await fetch(`${API_BASE}/signup/teacher`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Signup failed");
+        errorBox.textContent = "Signup submitted. Await admin approval.";
+        errorBox.style.display = "block";
+        errorBox.style.background = "rgba(16,185,129,0.2)";
+        errorBox.style.borderColor = "rgba(16,185,129,0.3)";
+        teacherForm.reset();
+      } catch (err) {
+        errorBox.textContent = err.message;
+        errorBox.style.display = "block";
+        errorBox.style.background = "";
+        errorBox.style.borderColor = "";
       }
     });
   </script>

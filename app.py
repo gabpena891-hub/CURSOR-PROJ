@@ -44,6 +44,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)  # demo: plaintext
     role = Column(String(20), nullable=False)
     full_name = Column(String(100), nullable=False)
+    approved = Column(Integer, nullable=False, default=1)  # 1=approved, 0=pending
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -168,7 +169,7 @@ with engine.connect() as conn:
         # If unable to alter, continue; missing column will surface in API use
         pass
 
-# Ensure middle_name column exists
+# Ensure middle_name and approved columns exist
 with engine.connect() as conn:
     try:
         col_exists = conn.execute(
@@ -183,6 +184,25 @@ with engine.connect() as conn:
         if not col_exists:
             conn.execute(
                 text("ALTER TABLE Students ADD middle_name NVARCHAR(1) NULL;")
+            )
+            conn.commit()
+    except Exception:
+        pass
+
+with engine.connect() as conn:
+    try:
+        col_exists = conn.execute(
+            text(
+                """
+                SELECT 1 FROM sys.columns 
+                WHERE Name = N'approved' 
+                  AND Object_ID = Object_ID(N'Users');
+                """
+            )
+        ).first()
+        if not col_exists:
+            conn.execute(
+                text("ALTER TABLE Users ADD approved INT NOT NULL CONSTRAINT DF_Users_Approved DEFAULT 1; UPDATE Users SET approved = 1 WHERE approved IS NULL;")
             )
             conn.commit()
     except Exception:
@@ -233,12 +253,15 @@ def login():
         )
         if not user:
             return error_response(401, "Invalid credentials")
+        if user.role == "Teacher" and not user.approved:
+            return error_response(403, "Account pending admin approval")
         return jsonify(
             {
                 "id": user.id,
                 "username": user.username,
                 "role": user.role,
                 "full_name": user.full_name,
+                "approved": bool(user.approved),
             }
         )
     except Exception as exc:
@@ -634,15 +657,18 @@ def create_communication():
 @app.route("/api/users", methods=["GET"])
 def list_users():
     role = request.args.get("role")
+    pending_only = request.args.get("pending", type=int)
     session_or_none = get_session()
     if isinstance(session_or_none, tuple):
         session, exc = session_or_none
         return error_response(500, "Database connection failed", str(exc))
     session = session_or_none
     try:
-        query = session.query(User.id, User.username, User.full_name, User.role)
+        query = session.query(User.id, User.username, User.full_name, User.role, User.approved)
         if role:
             query = query.filter(User.role == role)
+        if pending_only:
+            query = query.filter(User.approved == 0)
         rows = query.order_by(User.full_name.asc()).all()
         return jsonify(
             [
@@ -651,6 +677,7 @@ def list_users():
                     "username": r.username,
                     "full_name": r.full_name,
                     "role": r.role,
+                    "approved": bool(r.approved),
                 }
                 for r in rows
             ]
@@ -685,6 +712,7 @@ def create_user():
             password_hash=data["password"],  # plaintext for demo
             role=data["role"],
             full_name=data["full_name"],
+            approved=1,
         )
         session.add(user)
         session.commit()
@@ -708,6 +736,11 @@ def update_user(user_id: int):
         user = session.query(User).filter_by(id=user_id).first()
         if not user:
             return error_response(404, "User not found")
+        # Only Admin can approve
+        if "approved" in data:
+            admin_err = require_admin()
+            if admin_err:
+                return admin_err
         if "role" in data:
             if data["role"] not in ("Admin", "Teacher", "Parent"):
                 return error_response(400, "role must be Admin, Teacher, or Parent")
@@ -716,6 +749,8 @@ def update_user(user_id: int):
             user.full_name = data["full_name"]
         if "password" in data and data["password"]:
             user.password_hash = data["password"]  # plaintext for demo
+        if "approved" in data:
+            user.approved = 1 if data["approved"] else 0
         session.commit()
         return jsonify({"message": "User updated"})
     except Exception as exc:
@@ -739,6 +774,40 @@ def delete_user(user_id: int):
         session.delete(user)
         session.commit()
         return jsonify({"message": "User deleted"})
+    except Exception as exc:
+        session.rollback()
+        return error_response(500, "Unexpected error", str(exc))
+    finally:
+        session.close()
+
+
+@app.route("/api/signup/teacher", methods=["POST"])
+def signup_teacher():
+    data = request.get_json(silent=True) or {}
+    required = ["username", "password", "full_name"]
+    missing = [f for f in required if not data.get(f)]
+    if missing:
+        return error_response(400, f"Missing fields: {', '.join(missing)}")
+
+    session_or_none = get_session()
+    if isinstance(session_or_none, tuple):
+        session, exc = session_or_none
+        return error_response(500, "Database connection failed", str(exc))
+    session = session_or_none
+    try:
+        exists = session.query(User).filter_by(username=data["username"]).first()
+        if exists:
+            return error_response(409, "Username already exists")
+        user = User(
+            username=data["username"].strip(),
+            password_hash=data["password"],
+            role="Teacher",
+            full_name=data["full_name"].strip(),
+            approved=0,
+        )
+        session.add(user)
+        session.commit()
+        return jsonify({"message": "Signup submitted. Await admin approval.", "id": user.id}), 201
     except Exception as exc:
         session.rollback()
         return error_response(500, "Unexpected error", str(exc))

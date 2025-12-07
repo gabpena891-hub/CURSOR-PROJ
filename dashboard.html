@@ -327,11 +327,12 @@
       <button class="active" data-tab="overview">Overview</button>
       <button data-tab="students">Students</button>
       <button data-tab="logs">Grades</button>
+      <button data-tab="grade-sheet">Grade Sheet</button>
       <button data-tab="attendance">Attendance</button>
       <button data-tab="trends">Trends</button>
       <button data-tab="comms">Communications <span id="comms-badge" class="badge" style="display:none;">0</span></button>
       <button data-tab="subjects">Subjects</button>
-      <button data-tab="admin">Administration</button>
+      <button data-tab="admin">Administration <span id="admin-pending-badge" class="badge" style="display:none;">0</span></button>
       <button onclick="logout()">Logout</button>
     </nav>
   </aside>
@@ -459,6 +460,31 @@
       </div>
     </section>
 
+    <section class="tab" id="tab-grade-sheet">
+      <h3 class="section-title" style="margin-top:0;">Grade Sheet (per Subject)</h3>
+      <div class="card">
+        <div id="sheet-error" class="error"></div>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:12px;">
+          <select id="sheet-subject">
+            <option value="">Select subject</option>
+          </select>
+          <input id="sheet-assessment" placeholder="Assessment label (e.g., Quiz 1)" />
+          <input id="sheet-date" type="date" />
+        </div>
+        <div id="sheet-weights" style="font-size:12px; color: var(--muted); margin-bottom: 8px;">Weights: -</div>
+        <div style="max-height: 420px; overflow: auto; border: 1px solid var(--border); border-radius: 12px;">
+          <table id="sheet-table">
+            <thead><tr><th>Student</th><th>WW</th><th>PT</th><th>QA</th><th>Final</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div style="margin-top:12px; display:flex; gap:12px; flex-wrap: wrap;">
+          <button id="sheet-save">Save All</button>
+          <button id="sheet-clear" type="button" style="background: rgba(255,255,255,0.08);">Clear</button>
+        </div>
+      </div>
+    </section>
+
     <section class="tab" id="tab-comms">
       <h3 class="section-title" style="margin-top:0;">Parent-Teacher Communication</h3>
        <div id="comms-alert" class="error" style="display:none; background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.3); color: #bbf7d0;">
@@ -564,7 +590,7 @@
             </form>
             <div style="max-height: 300px; overflow-y: auto;">
                 <table id="users-table">
-                <thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody></tbody>
                 </table>
             </div>
@@ -607,6 +633,8 @@
     let currentUser = null;
     let usersCache = [];
     let editingSubjectId = null;
+    let gradeSheetRows = [];
+    let teacherBand = null;
 
     function classifyGradeLevel(gradeStr) {
       if (!gradeStr) return null;
@@ -629,6 +657,19 @@
       const parsed = JSON.parse(user);
       document.getElementById("user-name").textContent = parsed.full_name || parsed.username;
       currentUser = parsed;
+      if (currentUser.role === "Teacher") {
+        teacherBand = localStorage.getItem("spms_teacher_band");
+        if (!teacherBand || !["JHS", "SHS"].includes(teacherBand)) {
+          const picked = window.prompt("Select your level (JHS or SHS):", teacherBand || "JHS");
+          if (picked && ["JHS","SHS"].includes(picked.toUpperCase())) {
+            teacherBand = picked.toUpperCase();
+            localStorage.setItem("spms_teacher_band", teacherBand);
+          } else {
+            teacherBand = "JHS";
+            localStorage.setItem("spms_teacher_band", teacherBand);
+          }
+        }
+      }
       return parsed;
     }
 
@@ -673,7 +714,9 @@
 
     async function loadStudents() {
       const students = await fetchJSON("/students");
-      studentsCache = students;
+      studentsCache = (currentUser?.role === "Teacher" && teacherBand)
+        ? students.filter(s => classifyGradeLevel(s.grade_level) === teacherBand)
+        : students;
       const tbody = document.querySelector("#students-table tbody");
       const selectGrade = document.getElementById("grade-student");
       const selectAtt = document.getElementById("attendance-student");
@@ -714,7 +757,9 @@
 
     async function loadSubjects() {
       const subjects = await fetchJSON("/subjects");
-      subjectsCache = subjects;
+      subjectsCache = (currentUser?.role === "Teacher" && teacherBand)
+        ? subjects.filter(s => s.level_band === teacherBand)
+        : subjects;
       const tbody = document.querySelector("#subjects-table tbody");
       if (!tbody) return;
       tbody.innerHTML = "";
@@ -763,6 +808,24 @@
           }
         };
       });
+
+      // populate grade sheet subject dropdown
+      const sheetSelect = document.getElementById("sheet-subject");
+      if (sheetSelect) {
+        sheetSelect.innerHTML = "";
+        const mkOpt = (val, text, disabled = false, selected = false) => {
+          const o = document.createElement("option");
+          o.value = val;
+          o.textContent = text;
+          o.disabled = disabled;
+          if (selected) o.selected = true;
+          return o;
+        };
+        sheetSelect.appendChild(mkOpt("", "Select subject", true, true));
+        subjects.forEach(sub => {
+          sheetSelect.appendChild(mkOpt(sub.name, `${sub.name} (${sub.level_band}${sub.category ? " • " + sub.category : ""}${sub.track ? " • " + sub.track : ""})`));
+        });
+      }
     }
 
     function populateGradeSubjects() {
@@ -853,11 +916,124 @@
       document.getElementById("grade-value").value = total ? total.toFixed(2) : "";
     }
 
+    function buildGradeSheet() {
+      const subjectName = document.getElementById("sheet-subject").value;
+      const subjectMeta = subjectsCache.find(s => s.name === subjectName);
+      const band = subjectMeta?.level_band;
+      const sheetError = document.getElementById("sheet-error");
+      const tbody = document.querySelector("#sheet-table tbody");
+      const weightsLabel = document.getElementById("sheet-weights");
+      tbody.innerHTML = "";
+      gradeSheetRows = [];
+      if (!subjectName) {
+        weightsLabel.textContent = "Weights: select a subject";
+        return;
+      }
+      const weights = getWeightsForSubject(subjectName, subjectMeta, band);
+      if (weights) {
+        weightsLabel.textContent = `Weights: WW ${weights.ww}%, PT ${weights.pt}%, QA ${weights.qa}%`;
+      } else {
+        weightsLabel.textContent = "Weights: select a subject";
+      }
+      const eligible = studentsCache.filter(s => classifyGradeLevel(s.grade_level) === band);
+      if (eligible.length === 0) {
+        sheetError.textContent = `No students for ${band || "this"} level.`;
+        return;
+      }
+      sheetError.textContent = "";
+      eligible.forEach(s => {
+        const row = { student_id: s.id, ww: "", pt: "", qa: "", final: "", subject: subjectName };
+        gradeSheetRows.push(row);
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${s.first_name} ${s.last_name}${s.grade_level ? " (G" + s.grade_level + ")" : ""}</td>
+                        <td><input data-id="${s.id}" data-field="ww" type="number" step="0.01" min="0" max="100" style="width:100%;"></td>
+                        <td><input data-id="${s.id}" data-field="pt" type="number" step="0.01" min="0" max="100" style="width:100%;"></td>
+                        <td><input data-id="${s.id}" data-field="qa" type="number" step="0.01" min="0" max="100" style="width:100%;"></td>
+                        <td><input data-id="${s.id}" data-field="final" type="number" step="0.01" min="0" max="100" style="width:100%;" readonly></td>`;
+        tbody.appendChild(tr);
+      });
+      tbody.querySelectorAll("input").forEach(inp => {
+        inp.addEventListener("input", () => {
+          const id = Number(inp.dataset.id);
+          const field = inp.dataset.field;
+          const row = gradeSheetRows.find(r => r.student_id === id);
+          if (!row) return;
+          row[field] = inp.value;
+          if (["ww","pt","qa"].includes(field)) {
+            const weights = getWeightsForSubject(subjectName, subjectMeta, band);
+            const ww = Number(row.ww) || 0;
+            const pt = Number(row.pt) || 0;
+            const qa = Number(row.qa) || 0;
+            if (weights) {
+              const total = ((ww * weights.ww) + (pt * weights.pt) + (qa * weights.qa)) / 100;
+              row.final = total ? total.toFixed(2) : "";
+              tbody.querySelector(`input[data-id="${id}"][data-field="final"]`).value = row.final;
+            }
+          }
+        });
+      });
+    }
+
+    function resetGradeSheetInputs() {
+      document.getElementById("sheet-assessment").value = "";
+      document.getElementById("sheet-date").value = "";
+      gradeSheetRows.forEach(r => {
+        r.ww = r.pt = r.qa = r.final = "";
+      });
+      document.querySelectorAll("#sheet-table tbody input").forEach(inp => inp.value = "");
+    }
+
+    function syncSheetAssessments() {
+      // placeholder in case of future multi-assessment sync
+    }
+
+    function syncSheetDates() {
+      // placeholder in case of future multi-assessment sync
+    }
+
+    async function saveGradeSheet() {
+      const subjectName = document.getElementById("sheet-subject").value;
+      const assessment = document.getElementById("sheet-assessment").value.trim();
+      const dateVal = document.getElementById("sheet-date").value || undefined;
+      const sheetError = document.getElementById("sheet-error");
+      sheetError.textContent = "";
+      if (!subjectName) { sheetError.textContent = "Select a subject."; return; }
+      if (!assessment) { sheetError.textContent = "Enter assessment label."; return; }
+      const payloads = gradeSheetRows
+        .filter(r => r.ww || r.pt || r.qa)
+        .map(r => ({
+          student_id: r.student_id,
+          subject: subjectName,
+          assessment,
+          grade_value: Number(r.final || 0),
+          recorded_on: dateVal,
+          ww: Number(r.ww || 0),
+          pt: Number(r.pt || 0),
+          qa: Number(r.qa || 0),
+        }));
+      if (payloads.length === 0) { sheetError.textContent = "Enter at least one grade."; return; }
+      try {
+        for (const p of payloads) {
+          await fetchJSON("/grades", { method: "POST", body: JSON.stringify(p) });
+        }
+        resetGradeSheetInputs();
+        await refreshAll();
+      } catch (ex) {
+        sheetError.textContent = ex.message;
+      }
+    }
+
     async function loadGradesTable() {
       const grades = await fetchJSON("/grades");
       const tbody = document.querySelector("#grades-table tbody");
       tbody.innerHTML = "";
-      grades.slice(0, 25).forEach(g => {
+      const byBand = (currentUser?.role === "Teacher" && teacherBand)
+        ? grades.filter(g => {
+            const s = studentsCache.find(st => st.id === g.student_id);
+            return classifyGradeLevel(s?.grade_level) === teacherBand;
+          })
+        : grades;
+      byBand.slice(0, 25).forEach(g => {
         const tr = document.createElement("tr");
         tr.innerHTML = `<td>${g.student_id}</td><td>${g.subject}</td><td>${g.assessment}</td><td>${g.grade_value}</td><td>${g.recorded_on}</td>`;
         tbody.appendChild(tr);
@@ -868,7 +1044,13 @@
       const records = await fetchJSON("/attendance");
       const tbody = document.querySelector("#attendance-table tbody");
       tbody.innerHTML = "";
-      records.slice(0, 25).forEach(r => {
+      const byBand = (currentUser?.role === "Teacher" && teacherBand)
+        ? records.filter(r => {
+            const s = studentsCache.find(st => st.id === r.student_id);
+            return classifyGradeLevel(s?.grade_level) === teacherBand;
+          })
+        : records;
+      byBand.slice(0, 25).forEach(r => {
         const tr = document.createElement("tr");
         tr.innerHTML = `<td>${r.student_id}</td><td>${r.attendance_date}</td><td>${r.status}</td>`;
         tbody.appendChild(tr);
@@ -1051,17 +1233,29 @@
 
     async function loadUsers() {
       usersCache = await fetchJSON("/users");
+      const pendingTeachers = usersCache.filter(u => u.role === "Teacher" && !u.approved);
+      const badge = document.getElementById("admin-pending-badge");
+      if (badge) {
+        if (pendingTeachers.length > 0) {
+          badge.textContent = pendingTeachers.length;
+          badge.style.display = "inline-block";
+        } else {
+          badge.style.display = "none";
+        }
+      }
       const tbody = document.querySelector("#users-table tbody");
       tbody.innerHTML = "";
       usersCache.forEach(u => {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${u.username}</td><td>${u.full_name}</td><td>${u.role}</td>
+        const status = u.approved ? "Approved" : "Pending";
+        tr.innerHTML = `<td>${u.username}</td><td>${u.full_name}</td><td>${u.role}</td><td>${status}</td>
                         <td style="display:flex; gap:8px; align-items:center;">
                           <select data-id="${u.id}" class="user-role-update" style="padding: 4px 8px; height: auto;">
                             <option ${u.role==="Admin"?"selected":""}>Admin</option>
                             <option ${u.role==="Teacher"?"selected":""}>Teacher</option>
                             <option ${u.role==="Parent"?"selected":""}>Parent</option>
                           </select>
+                          ${!u.approved && u.role==="Teacher" ? `<button class="user-approve" data-id="${u.id}" style="padding:6px 10px; background:rgba(16,185,129,0.15); color:#34d399; border:1px solid rgba(16,185,129,0.2);">Approve</button>` : ""}
                           <button class="user-delete" data-id="${u.id}" style="padding:6px 10px; background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.2);">Delete</button>
                         </td>`;
         tbody.appendChild(tr);
@@ -1073,6 +1267,16 @@
           } catch (ex) {
             alert(ex.message);
             await loadUsers();
+          }
+        };
+      });
+      document.querySelectorAll(".user-approve").forEach(btn => {
+        btn.onclick = async () => {
+          try {
+            await fetchJSON(`/users/${btn.dataset.id}`, { method: "PUT", body: JSON.stringify({ approved: true }) });
+            await loadUsers();
+          } catch (ex) {
+            alert(ex.message);
           }
         };
       });
@@ -1268,6 +1472,15 @@
       ["grade-ww","grade-pt","grade-qa"].forEach(id => {
         document.getElementById(id).addEventListener("input", () => computeGradeTotal());
       });
+
+      const sheetSubject = document.getElementById("sheet-subject");
+      if (sheetSubject) {
+        sheetSubject.addEventListener("change", () => buildGradeSheet());
+        document.getElementById("sheet-clear").addEventListener("click", () => resetGradeSheetInputs());
+        document.getElementById("sheet-save").addEventListener("click", () => saveGradeSheet());
+        document.getElementById("sheet-assessment").addEventListener("input", () => syncSheetAssessments());
+        document.getElementById("sheet-date").addEventListener("change", () => syncSheetDates());
+      }
     }
 
     async function refreshAll() {
@@ -1284,6 +1497,7 @@
       ]);
       populateGradeSubjects();
       computeGradeTotal();
+      buildGradeSheet();
     }
 
     function resetSubjectForm() {
