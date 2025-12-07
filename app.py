@@ -26,6 +26,13 @@ engine = create_engine(db_url, pool_pre_ping=True, pool_recycle=1800)
 SessionLocal = scoped_session(sessionmaker(bind=engine))
 Base = declarative_base()
 
+# Ensure tables exist (idempotent; safe for first run on Render/sqlite)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception:
+    # Non-fatal; will surface on requests if missing
+    pass
+
 
 # Static file serving for Render/static hosting
 @app.route("/")
