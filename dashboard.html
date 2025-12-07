@@ -326,7 +326,8 @@
     <nav>
       <button class="active" data-tab="overview">Overview</button>
       <button data-tab="students">Students</button>
-      <button data-tab="logs">Grades & Attendance</button>
+      <button data-tab="logs">Grades</button>
+      <button data-tab="attendance">Attendance</button>
       <button data-tab="trends">Trends</button>
       <button data-tab="comms">Communications <span id="comms-badge" class="badge" style="display:none;">0</span></button>
       <button data-tab="subjects">Subjects</button>
@@ -390,16 +391,38 @@
           <form id="grade-form" style="background: transparent; border: none; padding: 0; grid-template-columns: 1fr;">
             <select id="grade-student" required></select>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                <input id="grade-subject" placeholder="Subject" required />
+                <select id="grade-subject" required>
+                  <option value="">Select subject (auto-filters JHS/SHS)</option>
+                </select>
                 <input id="grade-assessment" placeholder="Assessment Type" required />
             </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;">
+                <input id="grade-ww" type="number" step="0.01" min="0" max="100" placeholder="Written Works %" />
+                <input id="grade-pt" type="number" step="0.01" min="0" max="100" placeholder="Performance Tasks %" />
+                <input id="grade-qa" type="number" step="0.01" min="0" max="100" placeholder="Quarterly Exam %" />
+                <input id="grade-value" type="number" step="0.01" min="0" max="100" placeholder="Final Grade (auto)" readonly style="background: rgba(255,255,255,0.05);" />
+                <div id="grade-weights" style="font-size: 12px; color: var(--muted); grid-column: 1 / -1;">Weights: -</div>
+            </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                <input id="grade-value" type="number" step="0.01" min="0" max="100" placeholder="Grade %" required />
                 <input id="grade-date" type="date" />
             </div>
             <button type="submit">Submit Grade</button>
           </form>
         </div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <h3>Recent Grades</h3>
+          <table id="grades-table">
+            <thead><tr><th>Student</th><th>Subject</th><th>Assessment</th><th>Grade</th><th>Date</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="tab" id="tab-attendance">
+      <div class="grid">
         <div class="card">
           <h3>Record Attendance</h3>
           <div id="attendance-error" class="error"></div>
@@ -415,13 +438,6 @@
         </div>
       </div>
       <div class="grid">
-        <div class="card">
-          <h3>Recent Grades</h3>
-          <table id="grades-table">
-            <thead><tr><th>Student</th><th>Subject</th><th>Assessment</th><th>Grade</th><th>Date</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
         <div class="card">
           <h3>Recent Attendance</h3>
           <table id="attendance-table">
@@ -592,6 +608,16 @@
     let usersCache = [];
     let editingSubjectId = null;
 
+    function classifyGradeLevel(gradeStr) {
+      if (!gradeStr) return null;
+      const m = String(gradeStr).match(/(\d{1,2})/);
+      if (!m) return null;
+      const g = Number(m[1]);
+      if (g >= 7 && g <= 10) return "JHS";
+      if (g >= 11 && g <= 12) return "SHS";
+      return null;
+    }
+
     function logout() {
       localStorage.removeItem("spms_user");
       window.location.href = "index.html";
@@ -669,7 +695,7 @@
         tbody.appendChild(tr);
         const opt = document.createElement("option");
         opt.value = s.id;
-        opt.textContent = `${s.first_name} ${s.last_name}`;
+        opt.textContent = `${s.first_name} ${s.last_name}${s.grade_level ? " (G" + s.grade_level + ")" : ""}`;
         [selectGrade, selectAtt, selectTrend].forEach(sel => sel.appendChild(opt.cloneNode(true)));
       });
       // wire delete buttons
@@ -731,11 +757,100 @@
           try {
             await fetchJSON(`/subjects/${btn.dataset.id}`, { method: "DELETE" });
             await loadSubjects();
+            populateGradeSubjects();
           } catch (ex) {
             alert(ex.message || "Failed to delete subject.");
           }
         };
       });
+    }
+
+    function populateGradeSubjects() {
+      const select = document.getElementById("grade-subject");
+      if (!select) return;
+      const studentId = Number(document.getElementById("grade-student").value);
+      const student = studentsCache.find(s => s.id === studentId);
+      const band = classifyGradeLevel(student?.grade_level);
+      select.innerHTML = "";
+      const mkOpt = (val, text, disabled = false, selected = false) => {
+        const o = document.createElement("option");
+        o.value = val;
+        o.textContent = text;
+        o.disabled = disabled;
+        if (selected) o.selected = true;
+        return o;
+      };
+      if (!band) {
+        select.appendChild(mkOpt("", "Select a student to filter subjects", true, true));
+        return;
+      }
+      select.appendChild(mkOpt("", `Select ${band} subject`, true, true));
+      const filtered = subjectsCache.filter(s => s.level_band === band);
+      if (filtered.length === 0) {
+        select.appendChild(mkOpt("", `No ${band} subjects available`, true, true));
+        return;
+      }
+      filtered.forEach(sub => {
+        select.appendChild(mkOpt(sub.name, `${sub.name} (${sub.category}${sub.track ? " • " + sub.track : ""})`));
+      });
+      computeGradeTotal();
+    }
+
+    function getWeightsForSubject(subjectName, subjectMeta, band) {
+      if (!band) return null;
+      const name = (subjectName || "").toLowerCase();
+      const track = (subjectMeta?.track || "").toLowerCase();
+      // JHS rules
+      if (band === "JHS") {
+        const groupA = ["english","filipino","araling panlipunan","social studies","esp","edukasyon sa pagpapakatao"];
+        const groupB = ["science","math","mathematics"];
+        const groupC = ["mapeh","music","arts","physical education","pe","health","tle","technology & livelihood education","computer","ict","livelihood"];
+        if (groupA.some(x => name.includes(x))) return { ww:30, pt:50, qa:20 };
+        if (groupB.some(x => name.includes(x))) return { ww:40, pt:40, qa:20 };
+        if (groupC.some(x => name.includes(x))) return { ww:20, pt:60, qa:20 };
+        return { ww:30, pt:50, qa:20 }; // default JHS
+      }
+      // SHS rules
+      if (band === "SHS") {
+        const isCore = subjectMeta?.category === "Core";
+        const isWorkImmersion = name.includes("work immersion") || name.includes("research") || name.includes("capstone");
+        const acadTracks = ["stem","abm","humss","gas"];
+        const isAcad = acadTracks.includes(track);
+        const tvlTracks = ["ict","tvl","sports","arts","design","institutional"];
+        const isTvl = tvlTracks.includes(track);
+        if (isCore) return { ww:25, pt:50, qa:25 };
+        if (isAcad) {
+          if (isWorkImmersion) return { ww:35, pt:40, qa:25 };
+          return { ww:25, pt:45, qa:30 };
+        }
+        if (isTvl) {
+          return { ww:20, pt:60, qa:20 };
+        }
+        // fallback SHS
+        return { ww:25, pt:50, qa:25 };
+      }
+      return null;
+    }
+
+    function computeGradeTotal() {
+      const studentId = Number(document.getElementById("grade-student").value);
+      const student = studentsCache.find(s => s.id === studentId);
+      const band = classifyGradeLevel(student?.grade_level);
+      const subjectName = document.getElementById("grade-subject").value;
+      const subjectMeta = subjectsCache.find(s => s.name === subjectName);
+      const weights = getWeightsForSubject(subjectName, subjectMeta, band);
+      const ww = Number(document.getElementById("grade-ww").value) || 0;
+      const pt = Number(document.getElementById("grade-pt").value) || 0;
+      const qa = Number(document.getElementById("grade-qa").value) || 0;
+      const weightLabel = document.getElementById("grade-weights");
+      if (!weights) {
+        weightLabel.textContent = "Weights: select a student and subject";
+        document.getElementById("grade-value").value = "";
+        return;
+      }
+      weightLabel.textContent = `Weights: WW ${weights.ww}%, PT ${weights.pt}%, QA ${weights.qa}%`;
+      const total = ((ww * weights.ww) + (pt * weights.pt) + (qa * weights.qa)) / 100;
+      document.getElementById("grade-value").value = total ? total.toFixed(2) : "";
     }
 
     async function loadGradesTable() {
@@ -1011,6 +1126,7 @@
           recorded_by: user?.id,
         };
         if (!payload.student_id) { err.textContent = "Select a student."; return; }
+        if (!payload.subject) { err.textContent = "Select a subject."; return; }
         try {
           await fetchJSON("/grades", { method: "POST", body: JSON.stringify(payload) });
           e.target.reset();
@@ -1146,6 +1262,12 @@
         const studentId = document.getElementById("trend-student").value;
         await renderTrendChart(studentId);
       });
+
+      document.getElementById("grade-student").addEventListener("change", () => populateGradeSubjects());
+      document.getElementById("grade-subject").addEventListener("change", () => computeGradeTotal());
+      ["grade-ww","grade-pt","grade-qa"].forEach(id => {
+        document.getElementById(id).addEventListener("input", () => computeGradeTotal());
+      });
     }
 
     async function refreshAll() {
@@ -1160,6 +1282,8 @@
         loadAdviserInsights(),
         loadUsers(),
       ]);
+      populateGradeSubjects();
+      computeGradeTotal();
     }
 
     function resetSubjectForm() {
@@ -1184,6 +1308,7 @@
       if (role === "Parent") {
         hiddenTabs.push("students", "logs", "admin"); // no CRUD
         hiddenTabs.push("subjects");
+        hiddenTabs.push("attendance");
         // disable forms
         document.querySelectorAll("form button").forEach(b => {
           if (!b.closest("#comm-form")) b.disabled = true;
