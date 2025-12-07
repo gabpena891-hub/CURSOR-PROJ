@@ -1,5 +1,6 @@
 import os
 import logging
+import re
 from datetime import date, datetime
 
 from flask import Flask, jsonify, request, send_from_directory, abort
@@ -634,10 +635,12 @@ def require_admin():
 
 
 def parse_band_from_grade(grade_str: str):
-    try:
-        g = int(grade_str)
-    except Exception:
+    if not grade_str:
         return None
+    match = re.search(r"(\d+)", str(grade_str))
+    if not match:
+        return None
+    g = int(match.group(1))
     if 7 <= g <= 10:
         return "JHS"
     if 11 <= g <= 12:
