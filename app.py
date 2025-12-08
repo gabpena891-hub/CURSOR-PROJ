@@ -478,6 +478,9 @@ def admin_system_repair():
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='subjects' AND column_name='weight_qa') THEN
                 ALTER TABLE subjects ADD COLUMN weight_qa FLOAT DEFAULT 0;
             END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='subjects' AND column_name='teacher_id') THEN
+                ALTER TABLE subjects ADD COLUMN teacher_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+            END IF;
         END $$;
         """,
         # sections table
@@ -501,6 +504,19 @@ def admin_system_repair():
             END IF;
         END $$;
         """,
+        # student_subjects table
+        """
+        CREATE TABLE IF NOT EXISTS student_subjects (
+            id SERIAL PRIMARY KEY,
+            student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+            subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+            teacher_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL,
+            term VARCHAR(20),
+            active INT DEFAULT 1,
+            created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+        );
+        """,
     ]
 
     # sqlite alternative for compatibility
@@ -514,8 +530,10 @@ def admin_system_repair():
             "ALTER TABLE subjects ADD COLUMN weight_ww FLOAT DEFAULT 0;",
             "ALTER TABLE subjects ADD COLUMN weight_pt FLOAT DEFAULT 0;",
             "ALTER TABLE subjects ADD COLUMN weight_qa FLOAT DEFAULT 0;",
+            "ALTER TABLE subjects ADD COLUMN teacher_id INTEGER;",
             "CREATE TABLE IF NOT EXISTS sections (id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(100) NOT NULL, adviser_id INTEGER, level_band VARCHAR(10), grade_level VARCHAR(10), track VARCHAR(50), created_at DATETIME DEFAULT CURRENT_TIMESTAMP);",
             "ALTER TABLE students ADD COLUMN section_id INTEGER;",
+            "CREATE TABLE IF NOT EXISTS student_subjects (id INTEGER PRIMARY KEY AUTOINCREMENT, student_id INTEGER NOT NULL, subject_id INTEGER NOT NULL, teacher_id INTEGER, section_id INTEGER, term VARCHAR(20), active INT DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);",
         ]
 
     # Run DDL
@@ -768,6 +786,18 @@ class Student(Base):
     section = relationship("Section", back_populates="students")
 
 
+class StudentSubject(Base):
+    __tablename__ = "student_subjects"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    subject_id = Column(Integer, ForeignKey("subjects.id"), nullable=False)
+    teacher_id = Column(Integer, ForeignKey("users.id"))
+    section_id = Column(Integer, ForeignKey("sections.id"))
+    term = Column(String(20))
+    active = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class Attendance(Base):
     __tablename__ = "attendance"
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -837,6 +867,7 @@ class Subject(Base):
     weight_ww = Column(Float, nullable=True, server_default="0")
     weight_pt = Column(Float, nullable=True, server_default="0")
     weight_qa = Column(Float, nullable=True, server_default="0")
+    teacher_id = Column(Integer, ForeignKey("users.id"))
 
 
 # Utility helpers
@@ -2031,6 +2062,7 @@ def list_subjects():
                     "weight_ww": s.weight_ww,
                     "weight_pt": s.weight_pt,
                     "weight_qa": s.weight_qa,
+                    "teacher_id": s.teacher_id,
                 }
                 for s in subjects
             ]
@@ -2075,6 +2107,11 @@ def create_subject():
         return error_response(500, "Database connection failed", str(exc))
     session = session_or_none
     try:
+        teacher_id = data.get("teacher_id")
+        if teacher_id:
+            exists = session.query(User.id).filter(User.id == teacher_id).first()
+            if not exists:
+                return error_response(400, "teacher_id not found")
         subject = Subject(
             name=data["name"].strip(),
             category=category,
@@ -2082,6 +2119,7 @@ def create_subject():
             track=data.get("track"),
             grade_min=grade_min,
             grade_max=grade_max,
+            teacher_id=teacher_id,
         )
         session.add(subject)
         session.commit()
@@ -2123,6 +2161,13 @@ def update_subject(subject_id: int):
             subject.level_band = data["level_band"]
         if "track" in data:
             subject.track = data["track"]
+        if "teacher_id" in data:
+            tid = data["teacher_id"]
+            if tid:
+                exists = session.query(User.id).filter(User.id == tid).first()
+                if not exists:
+                    return error_response(400, "teacher_id not found")
+            subject.teacher_id = tid
         for fld in ("grade_min", "grade_max"):
             if fld in data:
                 val = data[fld]

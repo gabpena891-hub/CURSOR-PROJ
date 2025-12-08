@@ -603,6 +603,9 @@
           </select>
           <input id="sub-grade-min" type="number" min="7" max="12" placeholder="Grade from" />
           <input id="sub-grade-max" type="number" min="7" max="12" placeholder="Grade to" />
+          <select id="sub-teacher">
+            <option value="">Assign teacher (optional)</option>
+          </select>
           <div style="display:flex; gap:8px; grid-column: 1 / -1; flex-wrap: wrap;">
             <button id="sub-submit" type="submit">Add Subject</button>
             <button id="sub-cancel" type="button" style="background: rgba(255,255,255,0.08); display:none;">Cancel Edit</button>
@@ -610,7 +613,7 @@
         </form>
         <div style="max-height: 320px; overflow-y: auto; margin-top: 12px;">
           <table id="subjects-table">
-            <thead><tr><th>Name</th><th>Level</th><th>Cat.</th><th>Track</th><th>Grades</th><th>Action</th></tr></thead>
+            <thead><tr><th>Name</th><th>Level</th><th>Cat.</th><th>Track</th><th>Teacher</th><th>Grades</th><th>Action</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -839,6 +842,14 @@
       subjectsCache = bandFilter
         ? subjects.filter(s => s.level_band === bandFilter)
         : subjects;
+      const teacherLookup = Object.fromEntries(usersCache.map(u => [u.id, u.full_name || u.username]));
+      const teacherSelect = document.getElementById("sub-teacher");
+      if (teacherSelect) {
+        teacherSelect.innerHTML = `<option value="">Assign teacher (optional)</option>`;
+        usersCache.filter(u => u.role === "Teacher" && u.approved).forEach(t => {
+          teacherSelect.innerHTML += `<option value="${t.id}">${t.full_name || t.username}</option>`;
+        });
+      }
       const tbody = document.querySelector("#subjects-table tbody");
       if (!tbody) return;
       tbody.innerHTML = "";
@@ -851,6 +862,7 @@
                         <td>${sub.level_band}</td>
                         <td>${sub.category}</td>
                         <td>${sub.track || "-"}</td>
+                        <td>${sub.teacher_id ? (teacherLookup[sub.teacher_id] || sub.teacher_id) : "-"}</td>
                         <td>${gradeLabel}</td>
                         <td style="display:flex; gap:8px;">
                           <button class="edit-subject" data-id="${sub.id}" style="padding:6px 10px; background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.3);">Edit</button>
@@ -870,6 +882,7 @@
           document.getElementById("sub-track").value = sub.track || "";
           document.getElementById("sub-grade-min").value = sub.grade_min ?? "";
           document.getElementById("sub-grade-max").value = sub.grade_max ?? "";
+          document.getElementById("sub-teacher").value = sub.teacher_id || "";
           document.getElementById("sub-submit").textContent = "Update Subject";
           document.getElementById("sub-cancel").style.display = "inline-block";
           document.getElementById("subject-error").textContent = "";
@@ -1987,6 +2000,7 @@
             track: document.getElementById("sub-track").value || undefined,
             grade_min: document.getElementById("sub-grade-min").value ? Number(document.getElementById("sub-grade-min").value) : undefined,
             grade_max: document.getElementById("sub-grade-max").value ? Number(document.getElementById("sub-grade-max").value) : undefined,
+            teacher_id: document.getElementById("sub-teacher").value ? Number(document.getElementById("sub-teacher").value) : undefined,
           };
           if (!payload.level_band || !payload.category) {
             err.textContent = "Select level band and category.";
@@ -2135,6 +2149,7 @@
       document.getElementById("sub-track").value = "";
       document.getElementById("sub-grade-min").value = "";
       document.getElementById("sub-grade-max").value = "";
+      document.getElementById("sub-teacher").value = "";
       document.getElementById("sub-submit").textContent = "Add Subject";
       document.getElementById("sub-cancel").style.display = "none";
       const err = document.getElementById("subject-error");
