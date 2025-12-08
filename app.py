@@ -1578,6 +1578,16 @@ def delete_user(user_id: int):
         user = session.query(User).filter_by(id=user_id).first()
         if not user:
             return error_response(404, "User not found")
+        # Clear foreign-key references before deletion to avoid FK violations
+        session.query(Grade).filter(Grade.recorded_by == user_id).update(
+            {Grade.recorded_by: None}, synchronize_session=False
+        )
+        session.query(Attendance).filter(Attendance.recorded_by == user_id).update(
+            {Attendance.recorded_by: None}, synchronize_session=False
+        )
+        session.query(BehaviorReport).filter(BehaviorReport.reported_by == user_id).update(
+            {BehaviorReport.reported_by: None}, synchronize_session=False
+        )
         session.delete(user)
         session.commit()
         return jsonify({"message": "User deleted"})

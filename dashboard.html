@@ -1139,6 +1139,11 @@
       });
     }
 
+    // Alias for legacy call sites
+    function buildGradeSheet() {
+      return rebuildGradeSheetFromData();
+    }
+
     function resetGradeSheetInputs() {
       gradeSheetRows.forEach(r => { r.scores = {}; r.final = ""; });
       document.querySelectorAll("#sheet-table tbody input").forEach(inp => {
