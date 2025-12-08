@@ -480,6 +480,27 @@ def admin_system_repair():
             END IF;
         END $$;
         """,
+        # sections table
+        """
+        CREATE TABLE IF NOT EXISTS sections (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            adviser_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            level_band VARCHAR(10),
+            grade_level VARCHAR(10),
+            track VARCHAR(50),
+            created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+        );
+        """,
+        # students.section_id
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='section_id') THEN
+                ALTER TABLE students ADD COLUMN section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL;
+            END IF;
+        END $$;
+        """,
     ]
 
     # sqlite alternative for compatibility
@@ -493,6 +514,8 @@ def admin_system_repair():
             "ALTER TABLE subjects ADD COLUMN weight_ww FLOAT DEFAULT 0;",
             "ALTER TABLE subjects ADD COLUMN weight_pt FLOAT DEFAULT 0;",
             "ALTER TABLE subjects ADD COLUMN weight_qa FLOAT DEFAULT 0;",
+            "CREATE TABLE IF NOT EXISTS sections (id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(100) NOT NULL, adviser_id INTEGER, level_band VARCHAR(10), grade_level VARCHAR(10), track VARCHAR(50), created_at DATETIME DEFAULT CURRENT_TIMESTAMP);",
+            "ALTER TABLE students ADD COLUMN section_id INTEGER;",
         ]
 
     # Run DDL
@@ -712,6 +735,20 @@ class User(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class Section(Base):
+    __tablename__ = "sections"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    adviser_id = Column(Integer, ForeignKey("users.id"))
+    level_band = Column(String(10))  # JHS, SHS
+    grade_level = Column(String(10))
+    track = Column(String(50))
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    adviser = relationship("User")
+    students = relationship("Student", back_populates="section")
+
+
 class Student(Base):
     __tablename__ = "students"
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -722,11 +759,13 @@ class Student(Base):
     date_of_birth = Column(Date)
     grade_level = Column(String(10))
     homeroom_teacher = Column(String(100))
+    section_id = Column(Integer, ForeignKey("sections.id"))
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     attendance_records = relationship("Attendance", back_populates="student")
     grades = relationship("Grade", back_populates="student")
     behaviors = relationship("BehaviorReport", back_populates="student")
+    section = relationship("Section", back_populates="students")
 
 
 class Attendance(Base):
@@ -931,6 +970,7 @@ try:
         tables=[
             CommunicationMessage.__table__,
             Subject.__table__,
+            Section.__table__,
         ],
     )
 except Exception:
@@ -1003,6 +1043,7 @@ def get_students():
                 "last_name": s.last_name,
                 "grade_level": s.grade_level,
                 "homeroom_teacher": s.homeroom_teacher,
+                "section_id": s.section_id,
                 "date_of_birth": s.date_of_birth.isoformat()
                 if s.date_of_birth
                 else None,
@@ -1756,6 +1797,188 @@ def adviser_insights():
 
         return jsonify({"low_grades": low_grades, "attendance_risk": attendance_risk})
     except Exception as exc:
+        return error_response(500, "Unexpected error", str(exc))
+    finally:
+        session.close()
+
+
+@app.route("/api/sections", methods=["GET"])
+def list_sections():
+    level_band = request.args.get("level_band")
+    adviser_id = request.args.get("adviser_id", type=int)
+    grade_level = request.args.get("grade_level")
+
+    session_or_none = get_session()
+    if isinstance(session_or_none, tuple):
+        session, exc = session_or_none
+        return error_response(500, "Database connection failed", str(exc))
+    session = session_or_none
+    try:
+        band_header = current_teacher_band()
+        query = session.query(Section)
+        if level_band:
+            query = query.filter(Section.level_band == level_band)
+        if band_header:
+            query = query.filter(Section.level_band == band_header)
+        if adviser_id:
+            query = query.filter(Section.adviser_id == adviser_id)
+        if grade_level:
+            query = query.filter(Section.grade_level == grade_level)
+        sections = query.order_by(Section.name.asc()).all()
+        result = []
+        for s in sections:
+            count = session.query(func.count(Student.id)).filter(Student.section_id == s.id).scalar() or 0
+            adviser_name = None
+            if s.adviser_id:
+                adv = session.query(User).filter_by(id=s.adviser_id).first()
+                adviser_name = adv.full_name if adv else None
+            result.append(
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "adviser_id": s.adviser_id,
+                    "adviser_name": adviser_name,
+                    "level_band": s.level_band,
+                    "grade_level": s.grade_level,
+                    "track": s.track,
+                    "student_count": count,
+                }
+            )
+        return jsonify(result)
+    except Exception as exc:
+        return error_response(500, "Unexpected error", str(exc))
+    finally:
+        session.close()
+
+
+@app.route("/api/sections", methods=["POST"])
+def create_section():
+    admin_err = require_admin()
+    if admin_err:
+        return admin_err
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return error_response(400, "name is required")
+
+    session_or_none = get_session()
+    if isinstance(session_or_none, tuple):
+        session, exc = session_or_none
+        return error_response(500, "Database connection failed", str(exc))
+    session = session_or_none
+    try:
+        adviser_id = data.get("adviser_id")
+        if adviser_id:
+            exists = session.query(User.id).filter_by(id=adviser_id).first()
+            if not exists:
+                return error_response(400, "adviser_id not found")
+        section = Section(
+            name=name,
+            adviser_id=adviser_id,
+            level_band=data.get("level_band"),
+            grade_level=data.get("grade_level"),
+            track=data.get("track"),
+        )
+        session.add(section)
+        session.commit()
+        return jsonify({"message": "Section created", "id": section.id}), 201
+    except Exception as exc:
+        session.rollback()
+        return error_response(500, "Unexpected error", str(exc))
+    finally:
+        session.close()
+
+
+@app.route("/api/sections/<int:section_id>", methods=["PUT"])
+def update_section(section_id: int):
+    admin_err = require_admin()
+    if admin_err:
+        return admin_err
+    data = request.get_json(silent=True) or {}
+
+    session_or_none = get_session()
+    if isinstance(session_or_none, tuple):
+        session, exc = session_or_none
+        return error_response(500, "Database connection failed", str(exc))
+    session = session_or_none
+    try:
+        section = session.query(Section).filter_by(id=section_id).first()
+        if not section:
+            return error_response(404, "Section not found")
+        if "name" in data and data["name"]:
+            section.name = data["name"].strip()
+        if "adviser_id" in data:
+            adv_id = data["adviser_id"]
+            if adv_id:
+                exists = session.query(User.id).filter_by(id=adv_id).first()
+                if not exists:
+                    return error_response(400, "adviser_id not found")
+            section.adviser_id = adv_id
+        for fld in ("level_band", "grade_level", "track"):
+            if fld in data:
+                setattr(section, fld, data[fld])
+        session.commit()
+        return jsonify({"message": "Section updated"})
+    except Exception as exc:
+        session.rollback()
+        return error_response(500, "Unexpected error", str(exc))
+    finally:
+        session.close()
+
+
+@app.route("/api/sections/<int:section_id>", methods=["DELETE"])
+def delete_section(section_id: int):
+    admin_err = require_admin()
+    if admin_err:
+        return admin_err
+    session_or_none = get_session()
+    if isinstance(session_or_none, tuple):
+        session, exc = session_or_none
+        return error_response(500, "Database connection failed", str(exc))
+    session = session_or_none
+    try:
+        section = session.query(Section).filter_by(id=section_id).first()
+        if not section:
+            return error_response(404, "Section not found")
+        session.query(Student).filter(Student.section_id == section_id).update(
+            {Student.section_id: None}, synchronize_session=False
+        )
+        session.delete(section)
+        session.commit()
+        return jsonify({"message": "Section deleted"})
+    except Exception as exc:
+        session.rollback()
+        return error_response(500, "Unexpected error", str(exc))
+    finally:
+        session.close()
+
+
+@app.route("/api/sections/<int:section_id>/students", methods=["POST"])
+def assign_students_to_section(section_id: int):
+    admin_err = require_admin()
+    if admin_err:
+        return admin_err
+    data = request.get_json(silent=True) or {}
+    ids = data.get("student_ids") or []
+    if not isinstance(ids, list) or not ids:
+        return error_response(400, "student_ids list is required")
+
+    session_or_none = get_session()
+    if isinstance(session_or_none, tuple):
+        session, exc = session_or_none
+        return error_response(500, "Database connection failed", str(exc))
+    session = session_or_none
+    try:
+        section = session.query(Section).filter_by(id=section_id).first()
+        if not section:
+            return error_response(404, "Section not found")
+        session.query(Student).filter(Student.id.in_(ids)).update(
+            {Student.section_id: section_id}, synchronize_session=False
+        )
+        session.commit()
+        return jsonify({"message": "Students assigned", "section_id": section_id, "count": len(ids)})
+    except Exception as exc:
+        session.rollback()
         return error_response(500, "Unexpected error", str(exc))
     finally:
         session.close()

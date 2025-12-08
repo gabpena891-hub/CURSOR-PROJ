@@ -330,6 +330,7 @@
     <nav>
       <button class="active" data-tab="overview">Overview</button>
       <button data-tab="students">Students</button>
+      <button data-tab="sections">Sections</button>
       <button data-tab="logs">Grades</button>
       <button data-tab="grade-sheet">Grade Sheet</button>
       <button data-tab="attendance">Attendance</button>
@@ -386,6 +387,52 @@
           <thead><tr><th>Student #</th><th>Name</th><th>Grade</th><th>Homeroom</th><th>Birthdate (DOB)</th><th>Action</th></tr></thead>
         <tbody></tbody>
       </table>
+    </section>
+
+    <section class="tab" id="tab-sections">
+      <h3 class="section-title" style="margin-top:0;">Manage Sections / Classes</h3>
+      <div id="section-error" class="error"></div>
+      <div class="grid">
+        <div class="card">
+          <h3>Create / Update Section</h3>
+          <form id="section-form" style="grid-template-columns: repeat(auto-fit, minmax(180px,1fr));">
+            <input id="section-name" placeholder="Section name (e.g., Grade 7 - A)" required />
+            <select id="section-band">
+              <option value="">Band (optional)</option>
+              <option value="JHS">JHS</option>
+              <option value="SHS">SHS</option>
+            </select>
+            <input id="section-grade" placeholder="Grade level (e.g., 7)" />
+            <input id="section-track" placeholder="Track/Strand (optional)" />
+            <select id="section-adviser">
+              <option value="">Adviser (optional)</option>
+            </select>
+            <button type="submit">Save Section</button>
+          </form>
+          <p style="font-size:12px; color: var(--muted); margin-top:8px;">Admins only: create/edit/delete sections and assign students.</p>
+        </div>
+        <div class="card">
+          <h3>Assign Students to Section</h3>
+          <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+            <select id="assign-section" style="min-width:200px;"></select>
+            <select id="assign-student" style="min-width:200px;"></select>
+            <button id="assign-btn" type="button">Assign</button>
+          </div>
+          <div id="section-roster" style="max-height:260px; overflow:auto; border:1px solid var(--border); border-radius:10px;">
+            <table>
+              <thead><tr><th>Student</th><th>Grade</th></tr></thead>
+              <tbody id="section-roster-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Sections Directory</h3>
+        <table id="sections-table">
+          <thead><tr><th>Name</th><th>Band</th><th>Grade</th><th>Track</th><th>Adviser</th><th>Students</th><th>Action</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
 
     <section class="tab" id="tab-logs">
@@ -636,6 +683,7 @@
     let studentsCache = [];
     let teachersCache = [];
     let subjectsCache = [];
+    let sectionsCache = [];
     let currentUser = null;
     let usersCache = [];
     let editingSubjectId = null;
@@ -1137,6 +1185,102 @@
         const finalInput = document.querySelector(`#sheet-table input[data-id="${row.student_id}"][data-field="final"]`);
         if (finalInput) finalInput.value = final;
       });
+    }
+
+    async function loadSections() {
+      const sections = await fetchJSON("/sections");
+      sectionsCache = sections;
+      renderSectionsTable();
+      populateSectionSelects();
+    }
+
+    function renderSectionsTable() {
+      const tbody = document.querySelector("#sections-table tbody");
+      if (!tbody) return;
+      tbody.innerHTML = "";
+      sectionsCache.forEach(sec => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${sec.name}</td>
+                        <td>${sec.level_band || "-"}</td>
+                        <td>${sec.grade_level || "-"}</td>
+                        <td>${sec.track || "-"}</td>
+                        <td>${sec.adviser_name || "-"}</td>
+                        <td>${sec.student_count || 0}</td>
+                        <td style="display:flex; gap:6px;">
+                          <button class="section-delete" data-id="${sec.id}" style="padding:6px 10px;">Delete</button>
+                        </td>`;
+        tbody.appendChild(tr);
+      });
+      tbody.querySelectorAll(".section-delete").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          if (!confirm("Delete section? Students will be unassigned.")) return;
+          try {
+            await fetchJSON(`/sections/${btn.dataset.id}`, { method: "DELETE" });
+            await loadSections();
+            await refreshAll();
+          } catch (ex) {
+            document.getElementById("section-error").textContent = ex.message;
+          }
+        });
+      });
+    }
+
+    function populateSectionSelects() {
+      const adviserSel = document.getElementById("section-adviser");
+      if (adviserSel) {
+        adviserSel.innerHTML = `<option value="">Adviser (optional)</option>`;
+        usersCache.filter(u => u.role === "Teacher" && u.approved).forEach(t => {
+          adviserSel.innerHTML += `<option value="${t.id}">${t.full_name || t.username}</option>`;
+        });
+      }
+      const sectionSel = document.getElementById("assign-section");
+      if (sectionSel) {
+        sectionSel.innerHTML = `<option value="">Select section</option>`;
+        sectionsCache.forEach(s => {
+          sectionSel.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+        });
+      }
+      const studentSel = document.getElementById("assign-student");
+      if (studentSel) {
+        studentSel.innerHTML = `<option value="">Select student</option>`;
+        studentsCache.forEach(st => {
+          studentSel.innerHTML += `<option value="${st.id}">${st.first_name} ${st.last_name} ${st.grade_level ? "(G"+st.grade_level+")" : ""}</option>`;
+        });
+      }
+      updateSectionRoster();
+    }
+
+    function updateSectionRoster() {
+      const sectionSel = document.getElementById("assign-section");
+      const rosterBody = document.getElementById("section-roster-body");
+      if (!sectionSel || !rosterBody) return;
+      rosterBody.innerHTML = "";
+      const secId = Number(sectionSel.value);
+      if (!secId) return;
+      const roster = studentsCache.filter(s => s.section_id === secId);
+      roster.forEach(s => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${s.first_name} ${s.last_name}</td><td>${s.grade_level || "-"}</td>`;
+        rosterBody.appendChild(tr);
+      });
+    }
+
+    async function assignStudentToSection() {
+      const secId = Number(document.getElementById("assign-section").value);
+      const studentId = Number(document.getElementById("assign-student").value);
+      const err = document.getElementById("section-error");
+      err.textContent = "";
+      if (!secId || !studentId) { err.textContent = "Pick section and student."; return; }
+      try {
+        await fetchJSON(`/sections/${secId}/students`, {
+          method: "POST",
+          body: JSON.stringify({ student_ids: [studentId] })
+        });
+        await refreshAll();
+        document.getElementById("assign-student").value = "";
+      } catch (ex) {
+        err.textContent = ex.message;
+      }
     }
 
     // Alias for legacy call sites
@@ -1858,6 +2002,37 @@
         document.getElementById("sheet-save").addEventListener("click", () => saveGradeSheetBulk());
       }
 
+      const sectionForm = document.getElementById("section-form");
+      if (sectionForm) {
+        sectionForm.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const err = document.getElementById("section-error");
+          err.textContent = "";
+          const payload = {
+            name: document.getElementById("section-name").value.trim(),
+            level_band: document.getElementById("section-band").value || null,
+            grade_level: document.getElementById("section-grade").value || null,
+            track: document.getElementById("section-track").value || null,
+            adviser_id: Number(document.getElementById("section-adviser").value) || null,
+          };
+          if (!payload.name) { err.textContent = "Name is required."; return; }
+          try {
+            await fetchJSON("/sections", { method: "POST", body: JSON.stringify(payload) });
+            sectionForm.reset();
+            await refreshAll();
+          } catch (ex) { err.textContent = ex.message; }
+        });
+      }
+
+      const assignSectionSel = document.getElementById("assign-section");
+      if (assignSectionSel) {
+        assignSectionSel.addEventListener("change", () => updateSectionRoster());
+      }
+      const assignBtn = document.getElementById("assign-btn");
+      if (assignBtn) {
+        assignBtn.addEventListener("click", () => assignStudentToSection());
+      }
+
       const reportBtn = document.getElementById("grade-report-btn");
       if (reportBtn) {
         reportBtn.addEventListener("click", () => downloadStudentReport());
@@ -1894,16 +2069,17 @@
     async function refreshAll() {
       setTodayAttendanceDate();
       await refreshUserBand();
+      await loadUsers();
       await Promise.all([
         loadDashboard(),
         loadStudents(),
         loadSubjects(),
+        loadSections(),
         loadGradesTable(),
         loadAttendanceTable(),
         loadTeachers(),
         loadComms(),
         loadAdviserInsights(),
-        loadUsers(),
       ]);
       populateGradeSubjects();
       computeGradeTotal();
