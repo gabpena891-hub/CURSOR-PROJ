@@ -416,24 +416,32 @@
     <section class="tab" id="tab-attendance">
       <div class="grid">
         <div class="card">
-          <h3>Record Attendance</h3>
+          <h3>Record Attendance (Today)</h3>
           <div id="attendance-error" class="error"></div>
           <form id="attendance-form" style="background: transparent; border: none; padding: 0; grid-template-columns: 1fr;">
             <select id="attendance-student" required></select>
-            <input id="attendance-date" type="date" required />
+            <input id="attendance-date" type="date" required readonly />
             <select id="attendance-status" required>
               <option value="">Select Status</option>
               <option>Present</option><option>Absent</option><option>Tardy</option>
             </select>
-            <button type="submit">Submit Attendance</button>
+            <button type="submit">Submit Today's Attendance</button>
           </form>
+          <p style="font-size:12px; color: var(--muted); margin-top:8px;">Date is locked to today for quick check-in.</p>
         </div>
       </div>
       <div class="grid">
         <div class="card">
-          <h3>Recent Attendance</h3>
-          <table id="attendance-table">
-            <thead><tr><th>Student</th><th>Date</th><th>Status</th></tr></thead>
+          <h3>Today's Attendance</h3>
+          <table id="attendance-today-table">
+            <thead><tr><th>Student</th><th>Date</th><th>Status</th><th>Update</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Attendance History (Editable)</h3>
+          <table id="attendance-history-table">
+            <thead><tr><th>Student</th><th>Date</th><th>Status</th><th>Update</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -1332,21 +1340,80 @@
       });
     }
 
+    function todayStr() {
+      return new Date().toISOString().slice(0,10);
+    }
+
+    function setTodayAttendanceDate() {
+      const d = document.getElementById("attendance-date");
+      if (d) {
+        d.value = todayStr();
+        d.max = d.value;
+        d.min = d.value;
+      }
+    }
+
+    async function updateAttendanceStatus(id, status) {
+      if (!id) return;
+      await fetchJSON(`/attendance/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ status })
+      });
+    }
+
     async function loadAttendanceTable() {
       const records = await fetchJSON("/attendance");
-      const tbody = document.querySelector("#attendance-table tbody");
-      tbody.innerHTML = "";
+      const todayTable = document.querySelector("#attendance-today-table tbody");
+      const historyTable = document.querySelector("#attendance-history-table tbody");
+      if (todayTable) todayTable.innerHTML = "";
+      if (historyTable) historyTable.innerHTML = "";
       const byBand = (currentUser?.role === "Teacher" && teacherBand)
         ? records.filter(r => {
             const s = studentsCache.find(st => st.id === r.student_id);
             return classifyGradeLevel(s?.grade_level) === teacherBand;
           })
         : records;
-      byBand.slice(0, 25).forEach(r => {
+      const today = todayStr();
+      const todays = byBand.filter(r => r.attendance_date === today);
+      const history = byBand.filter(r => r.attendance_date !== today).slice(0, 50);
+
+      const renderRow = (r, targetTbody) => {
+        const st = studentsCache.find(s => s.id === r.student_id);
+        const studentName = st ? `${st.first_name} ${st.last_name}` : r.student_id;
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${r.student_id}</td><td>${r.attendance_date}</td><td>${r.status}</td>`;
-        tbody.appendChild(tr);
-      });
+        tr.innerHTML = `<td>${studentName}</td>
+                        <td>${r.attendance_date}</td>
+                        <td>
+                          <select data-id="${r.id}" class="attn-status">
+                            <option ${r.status==="Present"?"selected":""}>Present</option>
+                            <option ${r.status==="Absent"?"selected":""}>Absent</option>
+                            <option ${r.status==="Tardy"?"selected":""}>Tardy</option>
+                          </select>
+                        </td>
+                        <td><button class="attn-save" data-id="${r.id}">Save</button></td>`;
+        targetTbody.appendChild(tr);
+      };
+
+      todays.forEach(r => renderRow(r, todayTable));
+      history.forEach(r => renderRow(r, historyTable));
+
+      const wireSaves = (tbody) => {
+        tbody.querySelectorAll(".attn-save").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            const id = btn.dataset.id;
+            const select = tbody.querySelector(`select[data-id="${id}"]`);
+            const status = select?.value;
+            try {
+              await updateAttendanceStatus(id, status);
+              await loadAttendanceTable();
+            } catch (ex) {
+              document.getElementById("attendance-error").textContent = ex.message;
+            }
+          });
+        });
+      };
+      if (todayTable) wireSaves(todayTable);
+      if (historyTable) wireSaves(historyTable);
     }
 
     function renderAttendance(attendance) {
@@ -1636,6 +1703,7 @@
         const err = document.getElementById("attendance-error");
         err.style.color = "#fca5a5";
         err.textContent = "";
+        setTodayAttendanceDate();
         const payload = {
           student_id: Number(document.getElementById("attendance-student").value),
           attendance_date: document.getElementById("attendance-date").value,
@@ -1647,7 +1715,7 @@
         if (!payload.status) { err.textContent = "Select a status."; return; }
         try {
           await fetchJSON("/attendance", { method: "POST", body: JSON.stringify(payload) });
-          e.target.reset();
+          setTodayAttendanceDate();
           err.style.color = "#34d399";
           err.textContent = "Attendance recorded.";
           await refreshAll();
