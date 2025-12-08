@@ -629,6 +629,64 @@ def admin_system_repair():
         session.close()
         return error_response(500, "Subject seed failed", str(exc))
 
+    # Students + demo grades seed (to avoid empty UI)
+    try:
+        student_count = session.query(Student).count()
+        if student_count == 0:
+            demo_students = [
+                {"student_number": "S1001", "first_name": "Juan", "last_name": "Dela Cruz", "grade_level": "Grade 7", "homeroom_teacher": "Gabriel Pena"},
+                {"student_number": "S1002", "first_name": "Maria", "last_name": "Santos", "grade_level": "Grade 10", "homeroom_teacher": "Gabriel Pena"},
+                {"student_number": "S2001", "first_name": "Ariel", "last_name": "Reyes", "grade_level": "Grade 11", "homeroom_teacher": "Gabriel Pena"},
+                {"student_number": "S2002", "first_name": "Bianca", "last_name": "Lim", "grade_level": "Grade 12", "homeroom_teacher": "Gabriel Pena"},
+                {"student_number": "S2003", "first_name": "Carlo", "last_name": "Tan", "grade_level": "Grade 12", "homeroom_teacher": "Gabriel Pena"},
+            ]
+            for s in demo_students:
+                session.add(
+                    Student(
+                        student_number=s["student_number"],
+                        first_name=s["first_name"],
+                        middle_name=None,
+                        last_name=s["last_name"],
+                        date_of_birth=None,
+                        grade_level=s["grade_level"],
+                        homeroom_teacher=s["homeroom_teacher"],
+                    )
+                )
+            session.flush()
+            student_count = session.query(Student).count()
+
+        grade_count = session.query(Grade).count()
+        if grade_count == 0:
+            # Map band to a couple of subjects
+            jhs_subjects = session.query(Subject).filter(Subject.level_band == "JHS").limit(2).all()
+            shs_subjects = session.query(Subject).filter(Subject.level_band == "SHS").limit(2).all()
+            students = session.query(Student).all()
+            today = date.today()
+            for st in students:
+                band = parse_band_from_grade(st.grade_level)
+                subj_list = jhs_subjects if band == "JHS" else shs_subjects
+                for subj in subj_list:
+                    session.add(
+                        Grade(
+                            student_id=st.id,
+                            subject=subj.name,
+                            assessment="Activity 1",
+                            component="WW",
+                            raw_score=40,
+                            max_score=50,
+                            grade_value=80.0,
+                            recorded_on=today,
+                            recorded_by=None,
+                        )
+                    )
+            grade_count = session.query(Grade).count()
+        diag["student_count"] = student_count
+        diag["grade_count"] = grade_count
+    except Exception as exc:
+        session.rollback()
+        session.close()
+        return error_response(500, "Demo seed failed", str(exc))
+
     try:
         session.commit()
     except Exception as exc:
