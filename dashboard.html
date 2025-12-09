@@ -774,6 +774,7 @@
       if (currentUser?.role) headers["X-User-Role"] = currentUser.role;
       if (currentUser?.role === "Teacher" && teacherBand) headers["X-Teacher-Band"] = teacherBand;
       if (currentUser?.id) headers["X-User-Id"] = currentUser.id;
+      if (currentUser?.full_name) headers["X-User-Name"] = currentUser.full_name;
       const res = await fetch(`${API_BASE}${path}`, {
         headers: { ...headers, ...(options.headers || {}) },
         ...options,
@@ -817,7 +818,9 @@
       selectTrend.appendChild(defaultOption("Select student"));
       if (selectReport) selectReport.appendChild(defaultOption("Select student"));
       tbody.innerHTML = "";
-      students.forEach((s) => {
+      const gradeSectionFilter = Number(document.getElementById("grade-section")?.value) || null;
+      const filteredStudents = students.filter(s => !gradeSectionFilter || s.section_id === gradeSectionFilter);
+      filteredStudents.forEach((s) => {
         const tr = document.createElement("tr");
         tr.innerHTML = `<td>${s.student_number || "-"}</td>
                         <td>${s.first_name} ${s.middle_name ? s.middle_name + ". " : ""}${s.last_name}</td>
@@ -2085,7 +2088,10 @@
       }
       const gradeSectionSelect = document.getElementById("grade-section");
       if (gradeSectionSelect) {
-        gradeSectionSelect.addEventListener("change", () => loadGradesTable());
+        gradeSectionSelect.addEventListener("change", () => {
+          loadStudents(); // repopulate student dropdown scoped to section
+          loadGradesTable();
+        });
       }
 
       const sheetSubject = document.getElementById("sheet-subject");

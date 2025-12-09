@@ -1098,6 +1098,13 @@ def current_teacher_id():
         return None
 
 
+def current_teacher_name():
+    role = request.headers.get("X-User-Role")
+    if role != "Teacher":
+        return None
+    return request.headers.get("X-User-Name")
+
+
 @app.route("/api/report-card", methods=["GET"])
 def report_card():
     student_id = request.args.get("student_id", type=int)
@@ -1114,12 +1121,16 @@ def report_card():
         if not student:
             return error_response(404, "Student not found")
 
-        # basic access control: Admin can view all; Teacher only if same band
+        # basic access control: Admin can view all; Teacher only if same band OR homeroom
         role = request.headers.get("X-User-Role")
         band = parse_band_from_grade(student.grade_level)
         if role == "Teacher":
             teacher_band = current_teacher_band()
-            if teacher_band and band and teacher_band != band:
+            teacher_name = current_teacher_name()
+            homeroom_ok = False
+            if teacher_name and student.homeroom_teacher:
+                homeroom_ok = teacher_name.strip().lower() == str(student.homeroom_teacher).strip().lower()
+            if teacher_band and band and teacher_band != band and not homeroom_ok:
                 return error_response(403, "Forbidden for this student band")
 
         grades = session.query(Grade).filter(Grade.student_id == student_id).all()
