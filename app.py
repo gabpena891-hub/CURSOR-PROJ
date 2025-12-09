@@ -43,6 +43,56 @@ with app.app_context():
     init_db()
 
 
+def ensure_section_schema():
+    """
+    Best-effort: add students.section_id and student_subjects table if missing.
+    This runs at startup to avoid crashes when the column/table are absent.
+    """
+    if engine.dialect.name == "postgresql":
+        ddl = """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='section_id') THEN
+                ALTER TABLE students ADD COLUMN section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='student_subjects') THEN
+                CREATE TABLE student_subjects (
+                    id SERIAL PRIMARY KEY,
+                    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                    subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+                    teacher_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL,
+                    term VARCHAR(20),
+                    active INT DEFAULT 1,
+                    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+                );
+            END IF;
+        END $$;
+        """
+    else:
+        ddl = """
+        CREATE TABLE IF NOT EXISTS student_subjects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            subject_id INTEGER NOT NULL,
+            teacher_id INTEGER,
+            section_id INTEGER,
+            term VARCHAR(20),
+            active INT DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(ddl))
+    except Exception as exc:
+        logging.warning("ensure_section_schema failed: %s", exc)
+
+
+# Try to patch schema early to avoid query crashes
+ensure_section_schema()
+
+
 # Static file serving for Render/static hosting
 @app.route("/")
 def serve_index():
