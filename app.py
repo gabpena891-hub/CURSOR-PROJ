@@ -99,8 +99,44 @@ def ensure_section_schema():
         logging.warning("ensure_section_schema failed: %s", exc)
 
 
+def ensure_attendance_schema():
+    """
+    Best-effort: add attendance.section_id and attendance.subject_id if missing.
+    """
+    if engine.dialect.name == "postgresql":
+        ddl = """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='attendance' AND column_name='section_id') THEN
+                ALTER TABLE attendance ADD COLUMN section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='attendance' AND column_name='subject_id') THEN
+                ALTER TABLE attendance ADD COLUMN subject_id INTEGER REFERENCES subjects(id) ON DELETE SET NULL;
+            END IF;
+        END $$;
+        """
+    else:
+        ddls = [
+            "ALTER TABLE attendance ADD COLUMN section_id INTEGER;",
+            "ALTER TABLE attendance ADD COLUMN subject_id INTEGER;",
+        ]
+    try:
+        with engine.begin() as conn:
+            if engine.dialect.name == "postgresql":
+                conn.execute(text(ddl))
+            else:
+                for stmt in ddls:
+                    try:
+                        conn.execute(text(stmt))
+                    except Exception:
+                        pass
+    except Exception as exc:
+        logging.warning("ensure_attendance_schema failed: %s", exc)
+
+
 # Try to patch schema early to avoid query crashes
 ensure_section_schema()
+ensure_attendance_schema()
 
 
 # Static file serving for Render/static hosting
@@ -598,6 +634,18 @@ def admin_system_repair():
             created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
         );
         """,
+        # attendance columns
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='attendance' AND column_name='section_id') THEN
+                ALTER TABLE attendance ADD COLUMN section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='attendance' AND column_name='subject_id') THEN
+                ALTER TABLE attendance ADD COLUMN subject_id INTEGER REFERENCES subjects(id) ON DELETE SET NULL;
+            END IF;
+        END $$;
+        """,
     ]
 
     # sqlite alternative for compatibility
@@ -615,6 +663,8 @@ def admin_system_repair():
             "CREATE TABLE IF NOT EXISTS sections (id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(100) NOT NULL, adviser_id INTEGER, level_band VARCHAR(10), grade_level VARCHAR(10), track VARCHAR(50), created_at DATETIME DEFAULT CURRENT_TIMESTAMP);",
             "ALTER TABLE students ADD COLUMN section_id INTEGER;",
             "CREATE TABLE IF NOT EXISTS student_subjects (id INTEGER PRIMARY KEY AUTOINCREMENT, student_id INTEGER NOT NULL, subject_id INTEGER NOT NULL, teacher_id INTEGER, section_id INTEGER, term VARCHAR(20), active INT DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);",
+            "ALTER TABLE attendance ADD COLUMN section_id INTEGER;",
+            "ALTER TABLE attendance ADD COLUMN subject_id INTEGER;",
         ]
 
     # Run DDL
@@ -886,6 +936,8 @@ class Attendance(Base):
     attendance_date = Column(Date, nullable=False)
     status = Column(String(20), nullable=False)
     recorded_by = Column(Integer, ForeignKey("users.id"))
+    section_id = Column(Integer, ForeignKey("sections.id"))
+    subject_id = Column(Integer, ForeignKey("subjects.id"))
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     student = relationship("Student", back_populates="attendance_records")
@@ -1076,6 +1128,52 @@ def parse_grade_number(grade_str: str):
         return int(m.group(1))
     except ValueError:
         return None
+
+
+def auto_assign_subjects_for_student(session, student: "Student", section: "Section" = None):
+    """
+    Enroll a student into StudentSubject rows based on grade level (and section track if provided).
+    """
+    grade_num = parse_grade_number(student.grade_level)
+    band = parse_band_from_grade(student.grade_level)
+    if not band or not grade_num:
+        return 0
+    track = None
+    if section and section.track:
+        track = section.track
+    # Determine eligible subjects
+    subjects = (
+        session.query(Subject)
+        .filter(Subject.level_band == band)
+        .filter(or_(Subject.grade_min == None, Subject.grade_min <= grade_num))  # noqa: E711
+        .filter(or_(Subject.grade_max == None, Subject.grade_max >= grade_num))  # noqa: E711
+        .all()
+    )
+    created = 0
+    for subj in subjects:
+        if subj.track and track and subj.track != track:
+            continue
+        exists = (
+            session.query(StudentSubject.id)
+            .filter(
+                StudentSubject.student_id == student.id,
+                StudentSubject.subject_id == subj.id,
+            )
+            .first()
+        )
+        if exists:
+            continue
+        session.add(
+            StudentSubject(
+                student_id=student.id,
+                subject_id=subj.id,
+                teacher_id=subj.teacher_id,
+                section_id=section.id if section else student.section_id,
+                active=1,
+            )
+        )
+        created += 1
+    return created
 
 
 def current_teacher_band():
@@ -1274,6 +1372,12 @@ def create_student():
         return error_response(500, "Database connection failed", str(exc))
     session = session_or_none
     try:
+        section_obj = None
+        section_id = data.get("section_id")
+        if section_id:
+            section_obj = session.query(Section).filter_by(id=section_id).first()
+            if not section_obj:
+                return error_response(400, "section_id not found")
         student = Student(
             student_number=data["student_number"].strip(),
             first_name=data["first_name"].strip(),
@@ -1284,8 +1388,14 @@ def create_student():
             else None,
             grade_level=data.get("grade_level"),
             homeroom_teacher=data.get("homeroom_teacher"),
+            section_id=section_obj.id if section_obj else None,
         )
         session.add(student)
+        session.flush()
+        try:
+            auto_assign_subjects_for_student(session, student, section_obj)
+        except Exception as exc:
+            logging.warning("auto assign subjects failed: %s", exc)
         session.commit()
         return jsonify({"message": "Student created", "id": student.id}), 201
     except IntegrityError as exc:
@@ -2221,6 +2331,14 @@ def assign_students_to_section(section_id: int):
             session.query(Student).filter(Student.id.in_(valid_ids)).update(
                 {Student.section_id: section_id}, synchronize_session=False
             )
+            session.flush()
+            try:
+                for sid in valid_ids:
+                    stu = session.query(Student).filter(Student.id == sid).first()
+                    if stu:
+                        auto_assign_subjects_for_student(session, stu, section)
+            except Exception as exc:
+                logging.warning("auto assign subjects on section assign failed: %s", exc)
         session.commit()
         return jsonify({"message": "Students assigned", "section_id": section_id, "count": len(ids)})
     except Exception as exc:
@@ -2432,6 +2550,9 @@ def delete_subject(subject_id: int):
 @app.route("/api/attendance", methods=["GET"])
 def list_attendance():
     student_id = request.args.get("student_id", type=int)
+    section_id = request.args.get("section_id", type=int)
+    subject_id = request.args.get("subject_id", type=int)
+    att_date = request.args.get("attendance_date")
     session_or_none = get_session()
     if isinstance(session_or_none, tuple):
         session, exc = session_or_none
@@ -2442,6 +2563,16 @@ def list_attendance():
         query = session.query(Attendance)
         if student_id:
             query = query.filter(Attendance.student_id == student_id)
+        if section_id:
+            query = query.filter(Attendance.section_id == section_id)
+        if subject_id:
+            query = query.filter(Attendance.subject_id == subject_id)
+        if att_date:
+            try:
+                parsed = date.fromisoformat(att_date)
+                query = query.filter(Attendance.attendance_date == parsed)
+            except ValueError:
+                return error_response(400, "attendance_date must be YYYY-MM-DD")
         if band:
             records = []
             for r in query.order_by(Attendance.attendance_date.desc()).all():
@@ -2458,6 +2589,8 @@ def list_attendance():
                     "attendance_date": a.attendance_date.isoformat(),
                     "status": a.status,
                     "recorded_by": a.recorded_by,
+                    "section_id": a.section_id,
+                    "subject_id": a.subject_id,
                 }
                 for a in records
             ]
@@ -2489,15 +2622,110 @@ def create_attendance():
         student = session.query(Student).filter_by(id=data["student_id"]).first()
         if not student:
             return error_response(404, "Student not found")
+        teacher_id = current_teacher_id()
+        subject_id = data.get("subject_id")
+        section_id = data.get("section_id") or student.section_id
+        if subject_id:
+            subj = session.query(Subject).filter_by(id=subject_id).first()
+            if not subj:
+                return error_response(400, "subject_id not found")
+            if teacher_id and subj.teacher_id not in (None, teacher_id):
+                return error_response(403, "Not allowed to record for this subject")
         record = Attendance(
             student_id=data["student_id"],
             attendance_date=attendance_date,
             status=data["status"],
             recorded_by=data.get("recorded_by"),
+            section_id=section_id,
+            subject_id=subject_id,
         )
         session.add(record)
         session.commit()
         return jsonify({"message": "Attendance recorded", "id": record.id}), 201
+    except Exception as exc:
+        session.rollback()
+        return error_response(500, "Unexpected error", str(exc))
+    finally:
+        session.close()
+
+
+@app.route("/api/attendance/bulk", methods=["POST"])
+def bulk_attendance():
+    data = request.get_json(silent=True) or {}
+    attendance_date = data.get("attendance_date")
+    records = data.get("records") or []
+    section_id = data.get("section_id")
+    subject_id = data.get("subject_id")
+    if not attendance_date:
+        return error_response(400, "attendance_date required")
+    try:
+        att_date = date.fromisoformat(attendance_date)
+    except ValueError:
+        return error_response(400, "attendance_date must be YYYY-MM-DD")
+    if not isinstance(records, list) or not records:
+        return error_response(400, "records list is required")
+
+    teacher_id = current_teacher_id()
+    session_or_none = get_session()
+    if isinstance(session_or_none, tuple):
+        session, exc = session_or_none
+        return error_response(500, "Database connection failed", str(exc))
+    session = session_or_none
+    try:
+        subj_obj = None
+        if subject_id:
+            subj_obj = session.query(Subject).filter_by(id=subject_id).first()
+            if not subj_obj:
+                return error_response(400, "subject_id not found")
+            if teacher_id and subj_obj.teacher_id not in (None, teacher_id):
+                return error_response(403, "Not allowed to record for this subject")
+        sec_obj = None
+        if section_id:
+            sec_obj = session.query(Section).filter_by(id=section_id).first()
+            if not sec_obj:
+                return error_response(400, "section_id not found")
+
+        saved = 0
+        for rec in records:
+            sid = rec.get("student_id")
+            status = rec.get("status") or "Present"
+            if not sid:
+                continue
+            student = session.query(Student).filter_by(id=sid).first()
+            if not student:
+                continue
+            if sec_obj and student.section_id != sec_obj.id:
+                # keep scoped to the section sheet
+                continue
+            target_section = sec_obj.id if sec_obj else student.section_id
+            existing = (
+                session.query(Attendance)
+                .filter(
+                    Attendance.student_id == sid,
+                    Attendance.attendance_date == att_date,
+                    Attendance.section_id == target_section,
+                    Attendance.subject_id == (subj_obj.id if subj_obj else None),
+                )
+                .first()
+            )
+            if existing:
+                existing.status = status
+                existing.recorded_by = rec.get("recorded_by")
+                saved += 1
+            else:
+                session.add(
+                    Attendance(
+                        student_id=sid,
+                        attendance_date=att_date,
+                        status=status,
+                        recorded_by=rec.get("recorded_by"),
+                        section_id=target_section,
+                        subject_id=subj_obj.id if subj_obj else None,
+                    )
+                )
+                saved += 1
+        session.commit()
+        return jsonify({"message": "Attendance sheet saved", "count": saved})
     except Exception as exc:
         session.rollback()
         return error_response(500, "Unexpected error", str(exc))
@@ -2522,7 +2750,7 @@ def update_attendance(attendance_id: int):
                 record.attendance_date = date.fromisoformat(data["attendance_date"])
             except ValueError:
                 return error_response(400, "attendance_date must be YYYY-MM-DD")
-        for field in ["status", "recorded_by", "student_id"]:
+        for field in ["status", "recorded_by", "student_id", "section_id", "subject_id"]:
             if field in data:
                 setattr(record, field, data[field])
         session.commit()

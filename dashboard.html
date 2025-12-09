@@ -475,18 +475,25 @@
     <section class="tab" id="tab-attendance">
       <div class="grid">
         <div class="card">
-          <h3>Record Attendance (Today)</h3>
+          <h3>Attendance Sheet (Today)</h3>
           <div id="attendance-error" class="error"></div>
-          <form id="attendance-form" style="background: transparent; border: none; padding: 0; grid-template-columns: 1fr;">
-            <select id="attendance-student" required></select>
-            <input id="attendance-date" type="date" required readonly />
-            <select id="attendance-status" required>
-              <option value="">Select Status</option>
-              <option>Present</option><option>Absent</option><option>Tardy</option>
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:12px;">
+            <select id="attendance-section">
+              <option value="">All sections</option>
             </select>
-            <button type="submit">Submit Today's Attendance</button>
-          </form>
-          <p style="font-size:12px; color: var(--muted); margin-top:8px;">Date is locked to today for quick check-in.</p>
+            <select id="attendance-subject">
+              <option value="">All subjects</option>
+            </select>
+            <input id="attendance-date" type="date" required readonly />
+            <button id="attendance-save" type="button" style="background: var(--accent); border:none;">Save Sheet</button>
+          </div>
+          <div style="max-height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: 12px;">
+            <table id="attendance-sheet-table">
+              <thead><tr><th>Student</th><th>Status</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p style="font-size:12px; color: var(--muted); margin-top:8px;">Status defaults to Present for quick entry. Saving will record the whole sheet for the selected date.</p>
         </div>
       </div>
       <div class="grid">
@@ -984,6 +991,18 @@
           gradeSubSel.appendChild(mkOpt2(sub.name, sub.name, current === sub.name));
         });
       }
+
+      // populate attendance subject filter
+      const attendanceSubjectSel = document.getElementById("attendance-subject");
+      if (attendanceSubjectSel) {
+        attendanceSubjectSel.innerHTML = `<option value="">All subjects</option>`;
+        const teacherId = currentUser?.role === "Teacher" ? currentUser.id : null;
+        subjects
+          .filter(sub => !teacherId || sub.teacher_id === teacherId)
+          .forEach(sub => {
+            attendanceSubjectSel.innerHTML += `<option value="${sub.id}">${sub.name}</option>`;
+          });
+      }
     }
 
     function populateGradeSubjects() {
@@ -1336,6 +1355,13 @@
           sheetSectionSel.innerHTML += `<option value="${s.id}">${s.name}</option>`;
         });
       }
+      const attendanceSectionSel = document.getElementById("attendance-section");
+      if (attendanceSectionSel) {
+        attendanceSectionSel.innerHTML = `<option value="">All sections</option>`;
+        sectionsCache.forEach(s => {
+          attendanceSectionSel.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+        });
+      }
       updateSectionRoster();
     }
 
@@ -1659,6 +1685,42 @@
       if (historyTable) wireSaves(historyTable);
     }
 
+    async function buildAttendanceSheet() {
+      const tbody = document.querySelector("#attendance-sheet-table tbody");
+      if (!tbody) return;
+      setTodayAttendanceDate();
+      const date = document.getElementById("attendance-date")?.value || todayStr();
+      const sectionId = Number(document.getElementById("attendance-section")?.value) || null;
+      const subjectId = Number(document.getElementById("attendance-subject")?.value) || null;
+      const students = studentsCache.filter(s => !sectionId || s.section_id === sectionId);
+      if (!students.length) {
+        tbody.innerHTML = `<tr><td colspan="2" style="text-align:center; color: var(--muted);">No students for this selection.</td></tr>`;
+        return;
+      }
+      const qs = new URLSearchParams();
+      qs.append("attendance_date", date);
+      if (sectionId) qs.append("section_id", sectionId);
+      if (subjectId) qs.append("subject_id", subjectId);
+      let existing = [];
+      try { existing = await fetchJSON(`/attendance?${qs.toString()}`); } catch (_) { existing = []; }
+      const existingMap = new Map(existing.map(r => [r.student_id, r]));
+      tbody.innerHTML = "";
+      students.forEach(st => {
+        const current = existingMap.get(st.id);
+        const status = current?.status || "Present";
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${st.first_name} ${st.last_name}</td>
+                        <td>
+                          <select data-student="${st.id}" class="attn-sheet-status">
+                            <option ${status==="Present"?"selected":""}>Present</option>
+                            <option ${status==="Absent"?"selected":""}>Absent</option>
+                            <option ${status==="Tardy"?"selected":""}>Tardy</option>
+                          </select>
+                        </td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
     function renderAttendance(attendance) {
       const ctx = document.getElementById("attendanceChart").getContext("2d");
       const data = [attendance.Present || 0, attendance.Absent || 0, attendance.Tardy || 0];
@@ -1941,29 +2003,43 @@
         } catch (ex) { err.textContent = ex.message; }
       });
 
-      document.getElementById("attendance-form").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const err = document.getElementById("attendance-error");
-        err.style.color = "#fca5a5";
-        err.textContent = "";
-        setTodayAttendanceDate();
-        const payload = {
-          student_id: Number(document.getElementById("attendance-student").value),
-          attendance_date: document.getElementById("attendance-date").value,
-          status: document.getElementById("attendance-status").value,
-          recorded_by: user?.id,
-        };
-        if (!payload.student_id) { err.textContent = "Select a student."; return; }
-        if (!payload.attendance_date) { err.textContent = "Pick a date."; return; }
-        if (!payload.status) { err.textContent = "Select a status."; return; }
-        try {
-          await fetchJSON("/attendance", { method: "POST", body: JSON.stringify(payload) });
+      const attSection = document.getElementById("attendance-section");
+      const attSubject = document.getElementById("attendance-subject");
+      if (attSection) attSection.onchange = buildAttendanceSheet;
+      if (attSubject) attSubject.onchange = buildAttendanceSheet;
+      const attSave = document.getElementById("attendance-save");
+      if (attSave) {
+        attSave.addEventListener("click", async () => {
+          const err = document.getElementById("attendance-error");
+          err.style.color = "#fca5a5";
+          err.textContent = "";
           setTodayAttendanceDate();
-          err.style.color = "#34d399";
-          err.textContent = "Attendance recorded.";
-          await refreshAll();
-        } catch (ex) { err.textContent = ex.message; }
-      });
+          const date = document.getElementById("attendance-date").value;
+          const sectionId = Number(document.getElementById("attendance-section").value) || null;
+          const subjectId = Number(document.getElementById("attendance-subject").value) || null;
+          if (!date) { err.textContent = "Date missing."; return; }
+          const rows = Array.from(document.querySelectorAll(".attn-sheet-status"));
+          if (!rows.length) { err.textContent = "No students to save."; return; }
+          const records = rows.map(sel => ({
+            student_id: Number(sel.dataset.student),
+            status: sel.value || "Present",
+          }));
+          try {
+            await fetchJSON("/attendance/bulk", {
+              method: "POST",
+              body: JSON.stringify({
+                attendance_date: date,
+                section_id: sectionId,
+                subject_id: subjectId,
+                records,
+              }),
+            });
+            err.style.color = "#34d399";
+            err.textContent = "Attendance sheet saved.";
+            await refreshAll();
+          } catch (ex) { err.textContent = ex.message; }
+        });
+      }
 
       // Communications form
       const studentSearch = document.getElementById("comm-student-search");
@@ -2193,6 +2269,7 @@
         loadComms(),
         loadAdviserInsights(),
       ]);
+      await buildAttendanceSheet();
       populateGradeSubjects();
       computeGradeTotal();
       rebuildGradeSheetFromData();
