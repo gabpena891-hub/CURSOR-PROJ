@@ -1395,6 +1395,7 @@
       const subjectMeta = subjectsCache.find(s => s.name === subjectName);
       const band = subjectMeta?.level_band;
       gradeSheetSubject = subjectName;
+      updateSheetSectionOptions(band || null);
       const sheetError = document.getElementById("sheet-error");
       const tbody = document.querySelector("#sheet-table tbody");
       const theadRow = document.getElementById("sheet-header-row");
@@ -1583,10 +1584,7 @@
       }
       const sheetSectionSel = document.getElementById("sheet-section");
       if (sheetSectionSel) {
-        sheetSectionSel.innerHTML = `<option value="">All sections</option>`;
-        sectionsCache.forEach(s => {
-          sheetSectionSel.innerHTML += `<option value="${s.id}">${s.name}</option>`;
-        });
+        updateSheetSectionOptions();
       }
       const attendanceSectionSel = document.getElementById("attendance-section");
       if (attendanceSectionSel) {
@@ -1596,6 +1594,33 @@
         });
       }
       updateSectionRoster();
+    }
+
+    function sectionMatchesBand(section, band) {
+      if (!band) return true;
+      const lvl = section?.grade_level || "";
+      const m = String(lvl).match(/(\d+)/);
+      if (!m) return false;
+      const g = Number(m[1]);
+      if (band === "JHS") return g >= 7 && g <= 10;
+      if (band === "SHS") return g >= 11 && g <= 12;
+      return true;
+    }
+
+    function updateSheetSectionOptions(band = null) {
+      const sheetSectionSel = document.getElementById("sheet-section");
+      if (!sheetSectionSel) return;
+      const current = sheetSectionSel.value;
+      sheetSectionSel.innerHTML = `<option value="">All sections</option>`;
+      sectionsCache
+        .filter(s => sectionMatchesBand(s, band))
+        .forEach(s => {
+          sheetSectionSel.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+        });
+      // preserve previous selection if still valid
+      if (current && Array.from(sheetSectionSel.options).some(o => o.value === current)) {
+        sheetSectionSel.value = current;
+      }
     }
 
     function updateSectionRoster() {
