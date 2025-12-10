@@ -14,14 +14,19 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #0a0f1a;
-      --sidebar: #111827;
-      --card: #1f2937;
-      --border: rgba(255, 255, 255, 0.1);
-      --accent: #6366f1;
-      --accent-hover: #4f46e5;
-      --muted: #9ca3af;
-      --text: #f9fafb;
+      --bg: #0b1220;
+      --bg-elevated: radial-gradient(circle at 20% 20%, rgba(124,58,237,0.06), transparent 32%), radial-gradient(circle at 80% 0%, rgba(14,165,233,0.05), transparent 28%), #0b1220;
+      --sidebar: #0f172a;
+      --card: #111a2e;
+      --card-strong: #0f1a2d;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.14);
+      --accent: #7c3aed;
+      --accent-hover: #6d28d9;
+      --accent-soft: rgba(124, 58, 237, 0.12);
+      --muted: #94a3b8;
+      --muted-strong: #cbd5e1;
+      --text: #e2e8f0;
       --danger: #ef4444;
       --success: #10b981;
     }
@@ -36,13 +41,14 @@
     body {
       margin: 0;
       font-family: "Inter", sans-serif;
-      background: var(--bg);
+      background: var(--bg-elevated);
       color: var(--text);
       display: flex;
       min-height: 100vh;
       overflow-x: hidden;
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
+      letter-spacing: 0.01em;
     }
 
     /* Sidebar Styling */
@@ -52,17 +58,18 @@
       padding: 24px 16px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 12px;
       position: sticky;
       top: 0;
       height: 100vh;
       overflow-y: auto;
       overflow-x: hidden;
-      width: 240px;
-      min-width: 240px;
-      max-width: 240px;
+      width: 250px;
+      min-width: 250px;
+      max-width: 250px;
       flex-shrink: 0;
       z-index: 10;
+      box-shadow: 8px 0 24px rgba(0,0,0,0.25);
     }
     .brand { 
       font-size: 18px; 
@@ -84,7 +91,7 @@
       border-radius: 50%;
       box-shadow: 0 0 12px var(--accent);
     }
-    nav { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow: hidden; }
+    nav { display: flex; flex-direction: column; gap: 6px; flex: 1; overflow: hidden; }
     nav button {
       width: 100%;
       color: var(--muted);
@@ -96,7 +103,8 @@
       cursor: pointer;
       font-size: 13px;
       font-weight: 500;
-      transition: all 0.15s ease;
+      letter-spacing: 0;
+      transition: all 0.2s ease;
       font-family: inherit;
       display: flex;
       align-items: center;
@@ -106,17 +114,25 @@
       text-overflow: ellipsis;
     }
     nav button:hover {
-      background: rgba(255,255,255,0.05);
-      color: white;
+      background: var(--accent-soft);
+      color: var(--muted-strong);
     }
     nav button.active {
       background: var(--accent);
       color: white;
-      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
+      box-shadow: 0 10px 24px rgba(124, 58, 237, 0.25);
     }
     nav button[onclick="logout()"] {
       margin-top: auto;
       color: #f87171;
+    }
+
+    main {
+      flex: 1;
+      padding: 28px 32px 40px;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
     }
     nav button[onclick="logout()"]:hover {
       background: rgba(239, 68, 68, 0.1);
