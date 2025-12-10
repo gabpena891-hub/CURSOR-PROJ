@@ -654,6 +654,10 @@
       <div class="grid">
         <div class="card">
           <h3>Attendance Sheet (Today)</h3>
+          <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:8px; font-size:13px; color: var(--muted);">
+            <span id="attendance-clock" style="font-weight:600; color:#e0e7ff;">--:--</span>
+            <span id="next-class-label" style="display:none;">Next class: <span id="next-class-value"></span></span>
+          </div>
           <div id="attendance-error" class="error"></div>
           <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:12px;">
             <select id="attendance-section">
@@ -1907,6 +1911,74 @@
       }
     }
 
+    function updateLiveClock() {
+      const el = document.getElementById("attendance-clock");
+      if (!el) return;
+      const now = new Date();
+      el.textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    }
+
+    const classTimeSlots = ["08:00", "09:00", "10:00", "11:00", "13:00", "14:00", "15:00"];
+
+    function buildTeacherSchedulePreview() {
+      if (!currentUser || currentUser.role !== "Teacher") return [];
+      const mySubs = subjectsCache.filter(s => s.teacher_id === currentUser.id);
+      let slotIdx = 0;
+      const sched = [];
+      mySubs.forEach(sub => {
+        const secs = sectionsCache.filter(sec => sectionMatchesBand(sec, sub.level_band || classifyGradeLevel(sec.grade_level)));
+        secs.forEach(sec => {
+          const slot = classTimeSlots[slotIdx % classTimeSlots.length];
+          sched.push({ section: sec.name, subject: sub.name, time: slot });
+          slotIdx++;
+        });
+      });
+      return sched;
+    }
+
+    function renderNextClassForTeacher() {
+      const label = document.getElementById("next-class-label");
+      const val = document.getElementById("next-class-value");
+      if (!label || !val) return;
+      if (!currentUser || currentUser.role !== "Teacher") {
+        label.style.display = "none";
+        return;
+      }
+      const sched = buildTeacherSchedulePreview();
+      if (!sched.length) {
+        label.style.display = "none";
+        return;
+      }
+      const now = new Date();
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      let next = null;
+      sched.forEach(entry => {
+        const [h, m] = entry.time.split(":").map(Number);
+        const mins = h * 60 + m;
+        if (mins >= nowMinutes && (!next || mins < next.mins)) {
+          next = { ...entry, mins };
+        }
+      });
+      if (!next) {
+        // no more classes today; pick earliest for tomorrow
+        const first = sched.reduce((acc, e) => {
+          const [h, m] = e.time.split(":").map(Number);
+          const mins = h * 60 + m;
+          if (!acc || mins < acc.mins) return { ...e, mins };
+          return acc;
+        }, null);
+        if (first) {
+          label.style.display = "inline";
+          val.textContent = `Tomorrow ${first.time} — ${first.subject} (${first.section})`;
+        } else {
+          label.style.display = "none";
+        }
+      } else {
+        label.style.display = "inline";
+        val.textContent = `${next.time} — ${next.subject} (${next.section})`;
+      }
+    }
+
     async function updateAttendanceStatus(id, status) {
       if (!id) return;
       await fetchJSON(`/attendance/${id}`, {
@@ -2569,6 +2641,7 @@
       populateGradeSubjects();
       computeGradeTotal();
       rebuildGradeSheetFromData();
+      renderNextClassForTeacher();
     }
 
     function resetSubjectForm() {
@@ -2664,6 +2737,8 @@
       const user = ensureUser();
       if (!user) return;
 
+      updateLiveClock();
+      setInterval(updateLiveClock, 1000);
       ensureAccessibilityLabels();
       setTodayAttendanceDate();
       applyRoleVisibility(user.role);
