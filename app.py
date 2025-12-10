@@ -1,6 +1,7 @@
 import os
 import logging
 import re
+import io
 from datetime import date, datetime
 
 from flask import Flask, jsonify, request, send_from_directory, abort
@@ -139,6 +140,73 @@ ensure_section_schema()
 ensure_attendance_schema()
 
 
+def ensure_schedule_schema():
+    """Best-effort creation of rooms and schedules tables."""
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS rooms (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name VARCHAR(100) UNIQUE NOT NULL,
+                        building VARCHAR(100),
+                        level VARCHAR(50),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    );
+                    """
+                    if engine.dialect.name != "postgresql"
+                    else """
+                    CREATE TABLE IF NOT EXISTS rooms (
+                        id SERIAL PRIMARY KEY,
+                        name VARCHAR(100) UNIQUE NOT NULL,
+                        building VARCHAR(100),
+                        level VARCHAR(50),
+                        created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+                    );
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS schedules (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        section_id INTEGER NOT NULL,
+                        subject_id INTEGER NOT NULL,
+                        teacher_id INTEGER,
+                        room_id INTEGER,
+                        day_of_week INTEGER NOT NULL,
+                        start_time VARCHAR(5) NOT NULL,
+                        end_time VARCHAR(5) NOT NULL,
+                        notes VARCHAR(200),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    );
+                    """
+                    if engine.dialect.name != "postgresql"
+                    else """
+                    CREATE TABLE IF NOT EXISTS schedules (
+                        id SERIAL PRIMARY KEY,
+                        section_id INTEGER NOT NULL,
+                        subject_id INTEGER NOT NULL,
+                        teacher_id INTEGER,
+                        room_id INTEGER,
+                        day_of_week INTEGER NOT NULL,
+                        start_time VARCHAR(5) NOT NULL,
+                        end_time VARCHAR(5) NOT NULL,
+                        notes VARCHAR(200),
+                        created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+                    );
+                    """
+                )
+            )
+    except Exception as exc:
+        logging.warning("ensure_schedule_schema failed: %s", exc)
+
+
+ensure_schedule_schema()
+
+
 # Static file serving for Render/static hosting
 @app.route("/")
 def serve_index():
@@ -199,6 +267,63 @@ def admin_seed():
         return jsonify({"message": "Admin seeded"})
     except Exception as exc:
         session.rollback()
+        return error_response(500, "Unexpected error", str(exc))
+    finally:
+        session.close()
+
+
+@app.route("/api/schedule/pdf", methods=["GET"])
+def schedule_pdf():
+    section_id = request.args.get("section_id", type=int)
+    teacher_id = request.args.get("teacher_id", type=int)
+    if not section_id and not teacher_id:
+        return error_response(400, "section_id or teacher_id is required")
+    session_or_none = get_session()
+    if isinstance(session_or_none, tuple):
+        session, exc = session_or_none
+        return error_response(500, "Database connection failed", str(exc))
+    session = session_or_none
+    try:
+        q = session.query(ScheduleEntry)
+        title = "Schedule"
+        if section_id:
+            q = q.filter(ScheduleEntry.section_id == section_id)
+            sec = session.query(Section).filter_by(id=section_id).first()
+            if not sec:
+                return error_response(404, "Section not found")
+            title = f"Section Schedule - {sec.name}"
+        if teacher_id:
+            q = q.filter(ScheduleEntry.teacher_id == teacher_id)
+            teacher = session.query(User).filter_by(id=teacher_id).first()
+            if not teacher:
+                return error_response(404, "Teacher not found")
+            title = f"Teacher Schedule - {teacher.full_name or teacher.username}"
+        rows = q.all()
+        data = []
+        for r in rows:
+            subj = session.query(Subject).filter_by(id=r.subject_id).first()
+            sec = session.query(Section).filter_by(id=r.section_id).first()
+            teacher = session.query(User).filter_by(id=r.teacher_id).first() if r.teacher_id else None
+            room = session.query(Room).filter_by(id=r.room_id).first() if r.room_id else None
+            data.append(
+                {
+                    "day_of_week": r.day_of_week,
+                    "start_time": r.start_time,
+                    "end_time": r.end_time,
+                    "subject_name": subj.name if subj else None,
+                    "section_name": sec.name if sec else None,
+                    "teacher_name": teacher.full_name if teacher else None,
+                    "room_name": room.name if room else None,
+                }
+            )
+        pdf_buf = make_schedule_pdf(data, title=title)
+        return send_file(
+            pdf_buf,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=f"{title.replace(' ', '_')}.pdf",
+        )
+    except Exception as exc:
         return error_response(500, "Unexpected error", str(exc))
     finally:
         session.close()
@@ -997,6 +1122,29 @@ class BehaviorReport(Base):
 class CommunicationMessage(Base):
     __tablename__ = "communications"
     id = Column(Integer, primary_key=True, autoincrement=True)
+
+
+class Room(Base):
+    __tablename__ = "rooms"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True)
+    building = Column(String(100))
+    level = Column(String(50))
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ScheduleEntry(Base):
+    __tablename__ = "schedules"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    section_id = Column(Integer, ForeignKey("sections.id"), nullable=False)
+    subject_id = Column(Integer, ForeignKey("subjects.id"), nullable=False)
+    teacher_id = Column(Integer, ForeignKey("users.id"))
+    room_id = Column(Integer, ForeignKey("rooms.id"))
+    day_of_week = Column(Integer, nullable=False)  # 0=Mon ... 6=Sun
+    start_time = Column(String(5), nullable=False)  # HH:MM
+    end_time = Column(String(5), nullable=False)    # HH:MM
+    notes = Column(String(200))
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     student_id = Column(Integer, ForeignKey("students.id"))
     sender_name = Column(String(100), nullable=False)
     sender_role = Column(String(50), nullable=False)
@@ -1046,36 +1194,36 @@ if engine.dialect.name == "mssql":
     try:
         with engine.connect() as conn:
             # student_number
-            col_exists = conn.execute(
-                text(
-                    """
-                    SELECT 1 FROM sys.columns 
-                    WHERE Name = N'student_number' 
+        col_exists = conn.execute(
+            text(
+                """
+                SELECT 1 FROM sys.columns 
+                WHERE Name = N'student_number' 
                           AND Object_ID = Object_ID(N'students');
-                    """
-                )
-            ).first()
-            if not col_exists:
-                conn.execute(
-                    text("ALTER TABLE Students ADD student_number NVARCHAR(50) NULL UNIQUE;")
-                )
-                conn.commit()
+                """
+            )
+        ).first()
+        if not col_exists:
+            conn.execute(
+                text("ALTER TABLE Students ADD student_number NVARCHAR(50) NULL UNIQUE;")
+            )
+            conn.commit()
 
             # middle_name
-            col_exists = conn.execute(
-                text(
-                    """
-                    SELECT 1 FROM sys.columns 
-                    WHERE Name = N'middle_name' 
+        col_exists = conn.execute(
+            text(
+                """
+                SELECT 1 FROM sys.columns 
+                WHERE Name = N'middle_name' 
                           AND Object_ID = Object_ID(N'students');
-                    """
-                )
-            ).first()
-            if not col_exists:
-                conn.execute(
-                    text("ALTER TABLE Students ADD middle_name NVARCHAR(1) NULL;")
-                )
-                conn.commit()
+                """
+            )
+        ).first()
+        if not col_exists:
+            conn.execute(
+                text("ALTER TABLE Students ADD middle_name NVARCHAR(1) NULL;")
+            )
+            conn.commit()
 
             # approved
             col_exists = conn.execute(
@@ -1196,6 +1344,48 @@ def auto_assign_subjects_for_student(session, student: "Student", section: "Sect
     return created
 
 
+# Approximate weekly hours per subject for scheduling (DepEd-aligned defaults).
+SUBJECT_WEEKLY_HOURS = {
+    # JHS cores
+    "Filipino 7": 5,
+    "English 7": 5,
+    "Araling Panlipunan 7": 4,
+    "Edukasyon sa Pagpapakatao 7": 1,
+    "Mathematics 7": 5,
+    "Science 7": 5,
+    "Mathematics 10": 5,
+    "Science 10": 5,
+    "MAPEH 7": 4,
+    "TLE 7": 4,
+    # SHS Core (3h default)
+    "Oral Communication": 3,
+    "Reading and Writing": 3,
+    "Komunikasyon at Pananaliksik": 3,
+    "General Mathematics": 3,
+    "Statistics and Probability": 3,
+    "Earth and Life Science": 3,
+    "Physical Education and Health": 3,
+    "Understanding Culture, Society, and Politics": 3,
+    # SHS Applied/Specialized (4h default)
+    "Empowerment Technologies": 4,
+    "Entrepreneurship": 4,
+    "Practical Research 1": 4,
+    "Practical Research 2": 4,
+    "Inquiries, Investigations, and Immersion": 4,
+}
+
+
+def subject_weekly_hours(subj: "Subject") -> int:
+    if subj.name in SUBJECT_WEEKLY_HOURS:
+        return SUBJECT_WEEKLY_HOURS[subj.name]
+    # fallback by category/band
+    if subj.level_band == "JHS":
+        return 4
+    if subj.level_band == "SHS":
+        return 3 if subj.category == "Core" else 4
+    return 3
+
+
 def current_teacher_band():
     role = request.headers.get("X-User-Role")
     if role != "Teacher":
@@ -1289,6 +1479,175 @@ def report_card():
         return error_response(500, "Unexpected error", str(exc))
     finally:
         session.close()
+
+
+def time_to_minutes(tstr: str) -> int:
+    h, m = tstr.split(":")
+    return int(h) * 60 + int(m)
+
+
+def minutes_to_str(mins: int) -> str:
+    h = mins // 60
+    m = mins % 60
+    return f"{h:02d}:{m:02d}"
+
+
+def generate_slots(include_saturday: bool = False):
+    """
+    Generate 1-hour slots from 07:00-12:00 and 13:00-17:00 (lunch 12:00-13:00).
+    """
+    slots = []
+    days = list(range(5 + (1 if include_saturday else 0)))  # 0-4 or 0-5
+    hour_ranges = [(7, 12), (13, 17)]
+    for day in days:
+        for start, end in hour_ranges:
+            for h in range(start, end):
+                slots.append((day, f"{h:02d}:00", f"{h+1:02d}:00"))
+    return slots
+
+
+def split_hours_into_blocks(hours: int):
+    """Split weekly hours into 1-3 blocks to avoid marathon sessions."""
+    if hours >= 5:
+        return [3, hours - 3]
+    if hours == 4:
+        return [2, 2]
+    if hours == 3:
+        return [2, 1]
+    if hours == 2:
+        return [2]
+    return [1]
+
+
+def subjects_for_section(session, section: "Section"):
+    band = section.level_band or parse_band_from_grade(section.grade_level)
+    grade_num = parse_grade_number(section.grade_level)
+    if not band:
+        return []
+    q = session.query(Subject).filter(Subject.level_band == band)
+    if grade_num:
+        q = q.filter(or_(Subject.grade_min == None, Subject.grade_min <= grade_num))  # noqa: E711
+        q = q.filter(or_(Subject.grade_max == None, Subject.grade_max >= grade_num))  # noqa: E711
+    return q.all()
+
+
+def ensure_default_room(session):
+    room = session.query(Room).first()
+    if room:
+        return room
+    room = Room(name="Room A", building="Main", level="1")
+    session.add(room)
+    session.commit()
+    return room
+
+
+def has_conflict(entries, day, start, end, key):
+    """Check conflict in a dict keyed by day -> list of (start,end, keyVal) for either section/teacher/room."""
+    if day not in entries:
+        return False
+    start_m = time_to_minutes(start)
+    end_m = time_to_minutes(end)
+    for (s, e, k) in entries[day]:
+        if key is not None and k is not None and k != key:
+            continue
+        if not (end_m <= time_to_minutes(s) or start_m >= time_to_minutes(e)):
+            return True
+    return False
+
+
+def record_block(entries, day, start, end, key):
+    entries.setdefault(day, []).append((start, end, key))
+
+
+def pdf_escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def make_schedule_pdf(entries, title="Schedule"):
+    """
+    Minimal PDF generator for schedule table. Avoids external deps.
+    """
+    buf = io.BytesIO()
+    lines = []
+    lines.append("%PDF-1.4")
+    objs = []
+
+    # Prepare content stream
+    y_start = 780
+    y = y_start
+    content = []
+    content.append("BT /F1 12 Tf 50 800 Td")
+    content.append(f"({pdf_escape(title)}) Tj")
+    content.append("ET")
+    y -= 24
+    headers = ["Day", "Time", "Section", "Subject", "Teacher", "Room"]
+    rows = []
+    for r in entries:
+        rows.append(
+            [
+                day_name_short(r.get("day_of_week")),
+                f"{r.get('start_time','')} - {r.get('end_time','')}",
+                r.get("section_name", "") or "-",
+                r.get("subject_name", "") or "-",
+                r.get("teacher_name", "") or "-",
+                r.get("room_name", "") or "-",
+            ]
+        )
+    table = [headers] + rows
+    col_widths = [80, 100, 120, 140, 140, 100]
+    content.append("BT /F1 10 Tf")
+    y = y_start - 40
+    for i, row in enumerate(table):
+        x = 40
+        for text, width in zip(row, col_widths):
+            content.append(f"1 0 0 1 {x} {y} Tm ({pdf_escape(str(text))}) Tj")
+            x += width
+        y -= 14
+        if y < 40:
+            break  # simple single-page guard
+    content.append("ET")
+    content_bytes = "\n".join(content).encode("utf-8")
+
+    # Objects
+    objs.append("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj")
+    objs.append("2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj")
+    objs.append(
+        "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj"
+    )
+    objs.append(f"4 0 obj << /Length {len(content_bytes)} >> stream\n".encode("utf-8"))
+    objs[-1] = objs[-1] + content_bytes + b"\nendstream\nendobj"
+    objs.append("5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj")
+
+    # Build xref
+    offsets = []
+    buf.write(lines[0].encode("utf-8") + b"\n")
+    for obj in objs:
+        offsets.append(buf.tell())
+        if isinstance(obj, bytes):
+            buf.write(obj + b"\n")
+        else:
+            buf.write(obj.encode("utf-8") + b"\n")
+    xref_pos = buf.tell()
+    buf.write(f"xref\n0 {len(objs)+1}\n".encode("utf-8"))
+    buf.write(b"0000000000 65535 f \n")
+    for off in offsets:
+        buf.write(f"{off:010} 00000 n \n".encode("utf-8"))
+    buf.write(
+        f"trailer << /Size {len(objs)+1} /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF".encode(
+            "utf-8"
+        )
+    )
+    buf.seek(0)
+    return buf
+
+
+def day_name_short(idx: int) -> str:
+    names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    if idx is None:
+        return "-"
+    if 0 <= idx < len(names):
+        return names[idx]
+    return str(idx)
 
 
 # Create missing tables (Communications, Subjects) without touching existing ones
@@ -1666,7 +2025,7 @@ def list_grades():
                 if st and parse_band_from_grade(st.grade_level) == band:
                     grades.append(g)
         else:
-            grades = query.order_by(Grade.recorded_on.desc()).all()
+        grades = query.order_by(Grade.recorded_on.desc()).all()
         return jsonify(
             [
                 {
@@ -2384,6 +2743,244 @@ def assign_students_to_section(section_id: int):
         session.close()
 
 
+@app.route("/api/rooms", methods=["GET", "POST"])
+def rooms():
+    if request.method == "GET":
+        session_or_none = get_session()
+        if isinstance(session_or_none, tuple):
+            session, exc = session_or_none
+            return error_response(500, "Database connection failed", str(exc))
+        session = session_or_none
+        try:
+            rooms = session.query(Room).order_by(Room.name.asc()).all()
+            return jsonify(
+                [
+                    {"id": r.id, "name": r.name, "building": r.building, "level": r.level}
+                    for r in rooms
+                ]
+            )
+        except Exception as exc:
+            return error_response(500, "Unexpected error", str(exc))
+        finally:
+            session.close()
+    # POST create room (admin only)
+    admin_err = require_admin()
+    if admin_err:
+        return admin_err
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return error_response(400, "name is required")
+    session_or_none = get_session()
+    if isinstance(session_or_none, tuple):
+        session, exc = session_or_none
+        return error_response(500, "Database connection failed", str(exc))
+    session = session_or_none
+    try:
+        exists = session.query(Room).filter_by(name=name).first()
+        if exists:
+            return error_response(409, "room name must be unique")
+        room = Room(name=name, building=data.get("building"), level=data.get("level"))
+        session.add(room)
+        session.commit()
+        return jsonify({"message": "Room created", "id": room.id}), 201
+    except Exception as exc:
+        session.rollback()
+        return error_response(500, "Unexpected error", str(exc))
+    finally:
+        session.close()
+
+
+@app.route("/api/rooms/<int:room_id>", methods=["DELETE"])
+def delete_room(room_id: int):
+    admin_err = require_admin()
+    if admin_err:
+        return admin_err
+    session_or_none = get_session()
+    if isinstance(session_or_none, tuple):
+        session, exc = session_or_none
+        return error_response(500, "Database connection failed", str(exc))
+    session = session_or_none
+    try:
+        room = session.query(Room).filter_by(id=room_id).first()
+        if not room:
+            return error_response(404, "Room not found")
+        session.query(ScheduleEntry).filter(ScheduleEntry.room_id == room_id).delete(
+            synchronize_session=False
+        )
+        session.delete(room)
+        session.commit()
+        return jsonify({"message": "Room deleted"})
+    except Exception as exc:
+        session.rollback()
+        return error_response(500, "Unexpected error", str(exc))
+    finally:
+        session.close()
+
+
+@app.route("/api/schedule", methods=["GET"])
+def list_schedule():
+    section_id = request.args.get("section_id", type=int)
+    teacher_id = request.args.get("teacher_id", type=int)
+    session_or_none = get_session()
+    if isinstance(session_or_none, tuple):
+        session, exc = session_or_none
+        return error_response(500, "Database connection failed", str(exc))
+    session = session_or_none
+    try:
+        q = session.query(ScheduleEntry)
+        if section_id:
+            q = q.filter(ScheduleEntry.section_id == section_id)
+        if teacher_id:
+            q = q.filter(ScheduleEntry.teacher_id == teacher_id)
+        rows = q.all()
+        result = []
+        for r in rows:
+            subj = session.query(Subject).filter_by(id=r.subject_id).first()
+            sec = session.query(Section).filter_by(id=r.section_id).first()
+            teacher = session.query(User).filter_by(id=r.teacher_id).first() if r.teacher_id else None
+            room = session.query(Room).filter_by(id=r.room_id).first() if r.room_id else None
+            result.append(
+                {
+                    "id": r.id,
+                    "section_id": r.section_id,
+                    "section_name": sec.name if sec else None,
+                    "subject_id": r.subject_id,
+                    "subject_name": subj.name if subj else None,
+                    "teacher_id": r.teacher_id,
+                    "teacher_name": teacher.full_name if teacher else None,
+                    "room_id": r.room_id,
+                    "room_name": room.name if room else None,
+                    "day_of_week": r.day_of_week,
+                    "start_time": r.start_time,
+                    "end_time": r.end_time,
+                    "notes": r.notes,
+                }
+            )
+        return jsonify(result)
+    except Exception as exc:
+        return error_response(500, "Unexpected error", str(exc))
+    finally:
+        session.close()
+
+
+@app.route("/api/schedule/auto-generate", methods=["POST"])
+def auto_generate_schedule():
+    admin_err = require_admin()
+    if admin_err:
+        return admin_err
+    data = request.get_json(silent=True) or {}
+    section_id = data.get("section_id")
+    allow_saturday = bool(data.get("allow_saturday", False))
+    if not section_id:
+        return error_response(400, "section_id is required")
+    session_or_none = get_session()
+    if isinstance(session_or_none, tuple):
+        session, exc = session_or_none
+        return error_response(500, "Database connection failed", str(exc))
+    session = session_or_none
+    try:
+        section = session.query(Section).filter_by(id=section_id).first()
+        if not section:
+            return error_response(404, "Section not found")
+        ensure_default_room(session)
+        rooms = session.query(Room).order_by(Room.name.asc()).all()
+
+        # Preload existing schedules to avoid conflicts across sections
+        existing = session.query(ScheduleEntry).all()
+        section_occ = {}
+        teacher_occ = {}
+        room_occ = {}
+        for r in existing:
+            if r.section_id == section_id:
+                continue  # will replace
+            record_block(section_occ, r.day_of_week, r.start_time, r.end_time, r.section_id)
+            if r.teacher_id:
+                record_block(teacher_occ, r.day_of_week, r.start_time, r.end_time, r.teacher_id)
+            if r.room_id:
+                record_block(room_occ, r.day_of_week, r.start_time, r.end_time, r.room_id)
+
+        # Clear existing schedule for section
+        session.query(ScheduleEntry).filter(ScheduleEntry.section_id == section_id).delete(
+            synchronize_session=False
+        )
+
+        subjects = subjects_for_section(session, section)
+        slots = generate_slots(include_saturday=allow_saturday)
+        # Organize slots by day for easier contiguous search
+        slots_by_day = {}
+        for day, start, end in slots:
+            slots_by_day.setdefault(day, []).append((start, end))
+
+        created = []
+        failures = []
+        for subj in subjects:
+            hours = subject_weekly_hours(subj)
+            blocks = split_hours_into_blocks(hours)
+            teacher_id = subj.teacher_id
+            for blk in blocks:
+                assigned = False
+                for day, day_slots in slots_by_day.items():
+                    if len(day_slots) < blk:
+                        continue
+                    for idx in range(0, len(day_slots) - blk + 1):
+                        start = day_slots[idx][0]
+                        end = day_slots[idx + blk - 1][1]
+                        # check conflicts for section and teacher and rooms
+                        if has_conflict(section_occ, day, start, end, section.id):
+                            continue
+                        if teacher_id and has_conflict(teacher_occ, day, start, end, teacher_id):
+                            continue
+                        room_choice = None
+                        for room in rooms:
+                            if has_conflict(room_occ, day, start, end, room.id):
+                                continue
+                            room_choice = room
+                            break
+                        if not room_choice:
+                            continue
+                        # assign
+                        entry = ScheduleEntry(
+                            section_id=section.id,
+                            subject_id=subj.id,
+                            teacher_id=teacher_id,
+                            room_id=room_choice.id,
+                            day_of_week=day,
+                            start_time=start,
+                            end_time=end,
+                            notes=None,
+                        )
+                        session.add(entry)
+                        record_block(section_occ, day, start, end, section.id)
+                        if teacher_id:
+                            record_block(teacher_occ, day, start, end, teacher_id)
+                        if room_choice:
+                            record_block(room_occ, day, start, end, room_choice.id)
+                        created.append(
+                            {
+                                "subject": subj.name,
+                                "day": day,
+                                "start": start,
+                                "end": end,
+                                "room": room_choice.name,
+                            }
+                        )
+                        assigned = True
+                        break
+                    if assigned:
+                        break
+                if not assigned:
+                    failures.append({"subject": subj.name, "hours": blk})
+
+        session.commit()
+        return jsonify({"created": created, "failed": failures})
+    except Exception as exc:
+        session.rollback()
+        return error_response(500, "Unexpected error", str(exc))
+    finally:
+        session.close()
+
+
 @app.route("/api/subjects", methods=["GET"])
 def list_subjects():
     level_band = request.args.get("level_band")
@@ -2633,7 +3230,7 @@ def list_attendance():
                 if st and parse_band_from_grade(st.grade_level) == band:
                     records.append(r)
         else:
-            records = query.order_by(Attendance.attendance_date.desc()).all()
+        records = query.order_by(Attendance.attendance_date.desc()).all()
         return jsonify(
             [
                 {

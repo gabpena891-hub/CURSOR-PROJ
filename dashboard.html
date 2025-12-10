@@ -558,8 +558,8 @@
       <div class="table-container">
         <table id="students-table">
           <thead><tr><th>Student #</th><th>Name</th><th>Grade</th><th>Homeroom</th><th>Birthdate (DOB)</th><th>Actions</th></tr></thead>
-          <tbody></tbody>
-        </table>
+        <tbody></tbody>
+      </table>
       </div>
       <div id="admin-students-panel" class="card" style="margin-top:16px; display:none;">
         <h3>Students (Admin)</h3>
@@ -609,6 +609,41 @@
             </table>
           </div>
         </div>
+        <div class="card">
+          <h3>Rooms</h3>
+          <form id="room-form" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap:10px; margin-bottom:12px;">
+            <input id="room-name" placeholder="Room name (e.g., Room 101)" required />
+            <input id="room-building" placeholder="Building (optional)" />
+            <input id="room-level" placeholder="Level/Floor (optional)" />
+            <button type="submit">Add Room</button>
+          </form>
+          <div class="table-container" style="max-height:200px;">
+            <table>
+              <thead><tr><th>Name</th><th>Building</th><th>Level</th><th></th></tr></thead>
+              <tbody id="room-table-body"></tbody>
+            </table>
+          </div>
+          <div id="room-status" style="font-size:12px; color: var(--muted); margin-top:6px;"></div>
+        </div>
+        <div class="card">
+          <h3>Section Schedule</h3>
+          <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+            <select id="schedule-section" style="min-width:200px;"></select>
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px; color: var(--muted);">
+              <input id="schedule-allow-sat" type="checkbox" /> Allow Saturday (make-up)
+            </label>
+            <button id="schedule-generate" type="button">Generate Schedule</button>
+            <button id="schedule-print" type="button" class="btn-secondary">Print</button>
+            <button id="schedule-pdf" type="button" class="btn-secondary">Download PDF</button>
+          </div>
+          <div class="table-container" style="max-height:260px;">
+            <table id="section-schedule-table">
+              <thead><tr><th>Day</th><th>Time</th><th>Subject</th><th>Teacher</th><th>Room</th></tr></thead>
+              <tbody id="section-schedule-body"></tbody>
+            </table>
+          </div>
+          <div id="schedule-status" style="font-size:12px; color: var(--muted); margin-top:8px;"></div>
+        </div>
       </div>
       <div class="card">
         <h3>Sections Directory</h3>
@@ -635,17 +670,17 @@
               <option value="">All subjects</option>
             </select>
             <button id="grade-refresh" type="button" class="btn-secondary">Refresh</button>
-          </div>
+            </div>
           <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
             <button id="grade-report-btn" type="button">Download Report Card (selected student)</button>
-          </div>
+            </div>
           <div id="grade-status" style="font-size:12px; color: var(--muted); margin-bottom:8px;"></div>
           <div class="table-container">
             <table id="grades-table">
               <thead><tr><th>Student</th><th>Subject</th><th>WW Avg</th><th>PT Avg</th><th>QA Avg</th><th>Final %</th><th>Entries</th><th>Actions</th></tr></thead>
               <tbody></tbody>
             </table>
-          </div>
+        </div>
         </div>
       </div>
     </section>
@@ -684,8 +719,8 @@
           <div class="table-container">
             <table id="attendance-today-table">
               <thead><tr><th>Student</th><th>Date</th><th>Status</th><th>Update</th></tr></thead>
-              <tbody></tbody>
-            </table>
+            <tbody></tbody>
+          </table>
           </div>
         </div>
         <div class="card">
@@ -693,7 +728,16 @@
           <div class="table-container">
             <table id="attendance-history-table">
               <thead><tr><th>Student</th><th>Date</th><th>Status</th><th>Update</th></tr></thead>
-              <tbody></tbody>
+            <tbody></tbody>
+          </table>
+          </div>
+        </div>
+        <div class="card" id="teacher-schedule-card" style="display:none;">
+          <h3>My Schedule (This Week)</h3>
+          <div class="table-container" style="max-height:260px;">
+            <table>
+              <thead><tr><th>Day</th><th>Time</th><th>Section</th><th>Subject</th><th>Room</th></tr></thead>
+              <tbody id="teacher-schedule-body"></tbody>
             </table>
           </div>
         </div>
@@ -770,10 +814,10 @@
       </form>
       <p class="section-title">Message History</p>
       <div class="table-container">
-        <table id="comm-table">
-          <thead><tr><th>Subject</th><th>From</th><th>To</th><th>Student</th><th>Date</th></tr></thead>
-          <tbody></tbody>
-        </table>
+      <table id="comm-table">
+        <thead><tr><th>Subject</th><th>From</th><th>To</th><th>Student</th><th>Date</th></tr></thead>
+        <tbody></tbody>
+      </table>
       </div>
     </section>
 
@@ -1008,13 +1052,13 @@
       
       toggleLoading(true);
       try {
-        const res = await fetch(`${API_BASE}${path}`, {
+      const res = await fetch(`${API_BASE}${path}`, {
           headers: { ...headers, ...(options.headers || {}) },
-          ...options,
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Request failed");
-        return data;
+        ...options,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Request failed");
+      return data;
       } catch (err) {
         if (!options.silent) {
             // Only show toast if not silent (optional)
@@ -1076,7 +1120,7 @@
                         <td>${s.date_of_birth ? `DOB: ${s.date_of_birth}` : "-"}</td>
                         <td style="display:flex; gap:8px; flex-wrap:wrap;">
                           <button data-id="${s.id}" class="print-report" style="padding:6px 10px;">Report PDF</button>
-                          <button data-id="${s.id}" class="print-schedule" style="padding:6px 10px;">Schedule PDF</button>
+                          <button data-id="${s.id}" class="print-schedule" style="padding:6px 10px;">Schedule</button>
                           <button data-id="${s.id}" class="delete-student" style="padding:6px 10px;">Delete</button>
                         </td>`;
         tbody.appendChild(tr);
@@ -1091,8 +1135,8 @@
         btn.onclick = async () => {
           if (!confirm("Delete this student (and related records)?")) return;
           try {
-            await fetchJSON(`/students/${btn.dataset.id}`, { method: "DELETE" });
-            await refreshAll();
+          await fetchJSON(`/students/${btn.dataset.id}`, { method: "DELETE" });
+          await refreshAll();
             showToast("Student deleted", "success");
           } catch (ex) {
             showToast(ex.message || "Failed to delete student.", "error");
@@ -1404,6 +1448,7 @@
       const band = subjectMeta?.level_band;
       gradeSheetSubject = subjectName;
       updateSheetSectionOptions(band || null);
+      syncScheduleSectionSelect();
       const sheetError = document.getElementById("sheet-error");
       const tbody = document.querySelector("#sheet-table tbody");
       const theadRow = document.getElementById("sheet-header-row");
@@ -1631,6 +1676,19 @@
       }
     }
 
+    function updateScheduleSectionSelect() {
+      const sel = document.getElementById("schedule-section");
+      if (!sel) return;
+      const current = sel.value;
+      sel.innerHTML = `<option value="">Select section</option>`;
+      sectionsCache.forEach(s => {
+        sel.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+      });
+      if (current && Array.from(sel.options).some(o => o.value === current)) {
+        sel.value = current;
+      }
+    }
+
     function updateSectionRoster() {
       const sectionSel = document.getElementById("assign-section");
       const rosterBody = document.getElementById("section-roster-body");
@@ -1644,6 +1702,7 @@
         tr.innerHTML = `<td>${s.first_name} ${s.last_name}</td><td>${s.grade_level || "-"}</td>`;
         rosterBody.appendChild(tr);
       });
+      loadSectionSchedule();
     }
 
     function updateAssignStudentOptions() {
@@ -1923,7 +1982,6 @@
     }
 
     const classTimeSlots = ["08:00", "09:00", "10:00", "11:00", "13:00", "14:00", "15:00"];
-    const classDays = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
     function buildTeacherSchedulePreview() {
       if (!currentUser || currentUser.role !== "Teacher") return [];
@@ -1982,75 +2040,6 @@
         label.style.display = "inline";
         val.textContent = `${next.time} — ${next.subject} (${next.section})`;
       }
-    }
-
-    function parseGradeNumberClient(gradeStr) {
-      if (!gradeStr) return null;
-      const m = String(gradeStr).match(/(\d{1,2})/);
-      return m ? Number(m[1]) : null;
-    }
-
-    function subjectsForStudent(stu) {
-      const gnum = parseGradeNumberClient(stu.grade_level);
-      const band = classifyGradeLevel(stu.grade_level);
-      const section = sectionsCache.find(sec => sec.id === stu.section_id);
-      const track = section?.track || null;
-      return subjectsCache.filter(sub => {
-        if (sub.level_band && band && sub.level_band !== band) return false;
-        if (sub.grade_min && gnum && sub.grade_min > gnum) return false;
-        if (sub.grade_max && gnum && sub.grade_max < gnum) return false;
-        if (sub.track && track && sub.track !== track) return false;
-        return true;
-      });
-    }
-
-    function buildScheduleEntries(stu) {
-      const subs = subjectsForStudent(stu);
-      const entries = [];
-      let idx = 0;
-      subs.forEach(sub => {
-        const day = classDays[idx % classDays.length];
-        const time = classTimeSlots[idx % classTimeSlots.length];
-        entries.push({ day, time, subject: sub.name, teacher: sub.teacher_name || "" });
-        idx++;
-      });
-      return entries;
-    }
-
-    function downloadStudentSchedule(studentId) {
-      const stu = studentsCache.find(s => s.id === studentId);
-      if (!stu) { showToast("Student not found", "error"); return; }
-      const entries = buildScheduleEntries(stu);
-      const win = window.open("", "_blank");
-      if (!win) return;
-      const rows = (entries.length
-        ? entries.map(e => `<tr><td>${e.day}</td><td>${e.time}</td><td>${e.subject}</td><td>${e.teacher || "-"}</td></tr>`).join("")
-        : `<tr><td colspan="4" style="text-align:center;">No subjects</td></tr>`);
-      const htmlParts = [
-        "<html>",
-        "<head>",
-        `<title>Schedule - ${stu.first_name} ${stu.last_name}</title>`,
-        "<style>",
-        "body { font-family: Arial, sans-serif; padding: 24px; color: #111; }",
-        "h2 { margin: 0 0 12px; }",
-        "table { width: 100%; border-collapse: collapse; margin-top: 12px; }",
-        "th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }",
-        "th { background: #f3f4f6; }",
-        "</style>",
-        "</head>",
-        "<body>",
-        "<h2>Class Schedule</h2>",
-        `<div style="margin-bottom:8px;">Student: <strong>${stu.first_name} ${stu.last_name}</strong>${stu.grade_level ? " • Grade " + stu.grade_level : ""}</div>`,
-        "<table>",
-        "<thead><tr><th>Day</th><th>Time</th><th>Subject</th><th>Teacher</th></tr></thead>",
-        `<tbody>${rows}</tbody>`,
-        "</table>",
-        "<script>window.print();<\\/script>",
-        "</body>",
-        "</html>"
-      ];
-      win.document.write(htmlParts.join(""));
-      win.document.close();
     }
 
     async function updateAttendanceStatus(id, status) {
@@ -2447,9 +2436,9 @@
       const attSave = document.getElementById("attendance-save");
       if (attSave) {
         attSave.addEventListener("click", async () => {
-          const err = document.getElementById("attendance-error");
+        const err = document.getElementById("attendance-error");
           err.style.color = "#fca5a5";
-          err.textContent = "";
+        err.textContent = "";
           err.style.display = "none";
           setTodayAttendanceDate();
           const date = document.getElementById("attendance-date").value;
@@ -2462,7 +2451,7 @@
             student_id: Number(sel.dataset.student),
             status: sel.value || "Present",
           }));
-          try {
+        try {
             await fetchJSON("/attendance/bulk", {
               method: "POST",
               body: JSON.stringify({
@@ -2475,9 +2464,9 @@
             err.style.color = "#34d399";
             err.textContent = "Attendance sheet saved.";
             err.style.display = "block";
-            await refreshAll();
+          await refreshAll();
           } catch (ex) { err.textContent = ex.message; err.style.display = "block"; }
-        });
+      });
       }
 
       // Communications form
@@ -2656,6 +2645,7 @@
         assignSectionSel.addEventListener("change", () => {
           updateAssignStudentOptions();
           updateSectionRoster();
+          syncScheduleSectionSelect();
         });
       }
       const assignBtn = document.getElementById("assign-btn");
@@ -2666,6 +2656,25 @@
       const reportBtn = document.getElementById("grade-report-btn");
       if (reportBtn) {
         reportBtn.addEventListener("click", () => downloadStudentReport());
+      }
+      const schedGen = document.getElementById("schedule-generate");
+      if (schedGen) {
+        schedGen.addEventListener("click", () => generateSectionSchedule());
+      }
+      const schedPrint = document.getElementById("schedule-print");
+      if (schedPrint) {
+        schedPrint.addEventListener("click", () => printSectionSchedule());
+      }
+      const schedPdf = document.getElementById("schedule-pdf");
+      if (schedPdf) {
+        schedPdf.addEventListener("click", () => downloadSectionSchedulePdf());
+      }
+      const roomForm = document.getElementById("room-form");
+      if (roomForm) {
+        roomForm.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          await createRoom();
+        });
       }
       const gradeRefresh = document.getElementById("grade-refresh");
       if (gradeRefresh) {
@@ -2710,12 +2719,16 @@
         loadTeachers(),
         loadComms(),
         loadAdviserInsights(),
+        loadRooms(),
       ]);
       await buildAttendanceSheet();
       populateGradeSubjects();
       computeGradeTotal();
       rebuildGradeSheetFromData();
       renderNextClassForTeacher();
+      updateScheduleSectionSelect();
+      await loadSectionSchedule();
+      await loadTeacherSchedule();
     }
 
     function resetSubjectForm() {
@@ -2807,6 +2820,257 @@
       });
     }
 
+    function syncScheduleSectionSelect() {
+      const assignSel = document.getElementById("assign-section");
+      const schedSel = document.getElementById("schedule-section");
+      if (!assignSel || !schedSel) return;
+      const val = assignSel.value;
+      if (val) schedSel.value = val;
+    }
+
+    function dayName(n) {
+      return ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][n] || n;
+    }
+
+    async function loadSectionSchedule() {
+      const secId = Number(document.getElementById("schedule-section")?.value || document.getElementById("assign-section")?.value);
+      const body = document.getElementById("section-schedule-body");
+      const status = document.getElementById("schedule-status");
+      if (!body) return;
+      body.innerHTML = "";
+      if (!secId) {
+        body.innerHTML = `<tr><td colspan="5" style="text-align:center; color: var(--muted);">Select a section.</td></tr>`;
+        return;
+      }
+      try {
+        const rows = await fetchJSON(`/schedule?section_id=${secId}`);
+        if (!rows.length) {
+          body.innerHTML = `<tr><td colspan="5" style="text-align:center; color: var(--muted);">No schedule yet.</td></tr>`;
+          status.textContent = "";
+          return;
+        }
+        rows.sort((a,b) => (a.day_of_week - b.day_of_week) || (a.start_time.localeCompare(b.start_time)));
+        rows.forEach(r => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${dayName(r.day_of_week)}</td>
+                          <td>${r.start_time} - ${r.end_time}</td>
+                          <td>${r.subject_name || "-"}</td>
+                          <td>${r.teacher_name || "-"}</td>
+                          <td>${r.room_name || "-"}</td>`;
+          body.appendChild(tr);
+        });
+        status.textContent = "";
+      } catch (ex) {
+        if (status) status.textContent = ex.message;
+      }
+    }
+
+    async function generateSectionSchedule() {
+      const secId = Number(document.getElementById("schedule-section")?.value || document.getElementById("assign-section")?.value);
+      const status = document.getElementById("schedule-status");
+      const allowSat = document.getElementById("schedule-allow-sat")?.checked || false;
+      if (!secId) {
+        if (status) status.textContent = "Select a section.";
+        return;
+      }
+      try {
+        status.textContent = "Generating...";
+        const res = await fetchJSON("/schedule/auto-generate", {
+          method: "POST",
+          body: JSON.stringify({ section_id: secId, allow_saturday: allowSat })
+        });
+        status.textContent = `Created ${res.created.length} blocks${res.failed.length ? `, failed ${res.failed.length}` : ""}`;
+        await loadSectionSchedule();
+      } catch (ex) {
+        if (status) status.textContent = ex.message;
+      }
+    }
+
+    function printSectionSchedule() {
+      const secSel = document.getElementById("schedule-section");
+      const secId = Number(secSel?.value || 0);
+      if (!secId) return;
+      fetchJSON(`/schedule?section_id=${secId}`)
+        .then(rows => {
+          if (!rows.length) {
+            showToast("No schedule for this section.", "info");
+            return;
+          }
+          const title = secSel && secSel.value ? `Schedule - ${secSel.options[secSel.selectedIndex].text}` : "Section Schedule";
+          renderScheduleToWindow(rows, title);
+        })
+        .catch(ex => showToast(ex.message || "Failed to load schedule.", "error"));
+    }
+
+    function downloadSectionSchedulePdf() {
+      const secSel = document.getElementById("schedule-section");
+      const secId = Number(secSel?.value || 0);
+      if (!secId) {
+        showToast("Select a section.", "error");
+        return;
+      }
+      const url = `/schedule/pdf?section_id=${secId}`;
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    function renderScheduleToWindow(rows, title) {
+      const win = window.open("", "_blank");
+      const grouped = {};
+      rows.forEach(r => {
+        grouped[r.day_of_week] = grouped[r.day_of_week] || [];
+        grouped[r.day_of_week].push(r);
+      });
+      Object.values(grouped).forEach(list => list.sort((a,b) => a.start_time.localeCompare(b.start_time)));
+      let html = `<h2>${title}</h2><table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse; width:100%;">`;
+      html += `<thead><tr><th>Day</th><th>Time</th><th>Section</th><th>Subject</th><th>Teacher</th><th>Room</th></tr></thead><tbody>`;
+      rows
+        .sort((a,b) => (a.day_of_week - b.day_of_week) || a.start_time.localeCompare(b.start_time))
+        .forEach(r => {
+          html += `<tr><td>${dayName(r.day_of_week)}</td><td>${r.start_time} - ${r.end_time}</td><td>${r.section_name || "-"}</td><td>${r.subject_name || "-"}</td><td>${r.teacher_name || "-"}</td><td>${r.room_name || "-"}</td></tr>`;
+        });
+      html += `</tbody></table>`;
+      win.document.write(`<html><head><title>${title}</title></head><body>${html}</body></html>`);
+      win.document.close();
+      win.focus();
+      win.print();
+    }
+
+    async function downloadStudentSchedule(studentId) {
+      const st = studentsCache.find(s => s.id === studentId);
+      if (!st || !st.section_id) {
+        showToast("No section for this student.", "error");
+        return;
+      }
+      try {
+        const rows = await fetchJSON(`/schedule?section_id=${st.section_id}`);
+        if (!rows.length) {
+          showToast("No schedule for this section.", "info");
+          return;
+        }
+        renderScheduleToWindow(rows, `Schedule - ${st.first_name} ${st.last_name}`);
+      } catch (ex) {
+        showToast(ex.message || "Failed to load schedule.", "error");
+      }
+    }
+
+    async function loadTeacherSchedule() {
+      const card = document.getElementById("teacher-schedule-card");
+      if (!currentUser || currentUser.role !== "Teacher") {
+        if (card) card.style.display = "none";
+        return;
+      }
+      const tbody = document.getElementById("teacher-schedule-body");
+      if (card) card.style.display = "block";
+      if (!tbody) return;
+      tbody.innerHTML = "";
+      try {
+        const rows = await fetchJSON(`/schedule?teacher_id=${currentUser.id}`);
+        if (!rows.length) {
+          tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: var(--muted);">No schedule assigned.</td></tr>`;
+          return;
+        }
+        rows.sort((a,b) => (a.day_of_week - b.day_of_week) || (a.start_time.localeCompare(b.start_time)));
+        rows.forEach(r => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${dayName(r.day_of_week)}</td>
+                          <td>${r.start_time} - ${r.end_time}</td>
+                          <td>${r.section_name || "-"}</td>
+                          <td>${r.subject_name || "-"}</td>
+                          <td>${r.room_name || "-"}</td>`;
+          tbody.appendChild(tr);
+        });
+        // add print button if not present
+        if (!document.getElementById("teacher-schedule-print")) {
+          const btn = document.createElement("button");
+          btn.id = "teacher-schedule-print";
+          btn.textContent = "Print";
+          btn.className = "btn-secondary";
+          btn.style.marginTop = "8px";
+          card.appendChild(btn);
+          btn.addEventListener("click", () => renderScheduleToWindow(rows, "My Schedule"));
+        }
+        if (!document.getElementById("teacher-schedule-pdf")) {
+          const btn2 = document.createElement("button");
+          btn2.id = "teacher-schedule-pdf";
+          btn2.textContent = "Download PDF";
+          btn2.className = "btn-secondary";
+          btn2.style.marginTop = "8px";
+          btn2.style.marginLeft = "8px";
+          card.appendChild(btn2);
+          btn2.addEventListener("click", () => {
+            const url = `/schedule/pdf?teacher_id=${currentUser.id}`;
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+          });
+        }
+      } catch (ex) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: var(--muted);">${ex.message}</td></tr>`;
+      }
+    }
+
+    async function loadRooms() {
+      const body = document.getElementById("room-table-body");
+      const status = document.getElementById("room-status");
+      if (!body) return;
+      body.innerHTML = "";
+      try {
+        const rooms = await fetchJSON("/rooms");
+        if (!rooms.length) {
+          body.innerHTML = `<tr><td colspan="4" style="text-align:center; color: var(--muted);">No rooms yet.</td></tr>`;
+          return;
+        }
+        rooms.forEach(r => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${r.name}</td><td>${r.building || "-"}</td><td>${r.level || "-"}</td><td><button class="room-delete" data-id="${r.id}">Delete</button></td>`;
+          body.appendChild(tr);
+        });
+        body.querySelectorAll(".room-delete").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            if (!confirm("Delete this room?")) return;
+            try {
+              await fetchJSON(`/rooms/${btn.dataset.id}`, { method: "DELETE" });
+              await loadRooms();
+            } catch (ex) {
+              if (status) status.textContent = ex.message;
+            }
+          });
+        });
+        if (status) status.textContent = "";
+      } catch (ex) {
+        if (status) status.textContent = ex.message;
+      }
+    }
+
+    async function createRoom() {
+      const name = document.getElementById("room-name").value.trim();
+      const building = document.getElementById("room-building").value.trim();
+      const level = document.getElementById("room-level").value.trim();
+      const status = document.getElementById("room-status");
+      if (!name) {
+        if (status) status.textContent = "Room name required.";
+        return;
+      }
+      try {
+        await fetchJSON("/rooms", {
+          method: "POST",
+          body: JSON.stringify({ name, building, level })
+        });
+        document.getElementById("room-form").reset();
+        if (status) status.textContent = "Room added.";
+        await loadRooms();
+      } catch (ex) {
+        if (status) status.textContent = ex.message;
+      }
+    }
     document.addEventListener("DOMContentLoaded", async () => {
       const user = ensureUser();
       if (!user) return;
