@@ -1525,6 +1525,14 @@
       const tbody = document.querySelector("#sheet-table tbody");
       const theadRow = document.getElementById("sheet-header-row");
       const weightsLabel = document.getElementById("sheet-weights");
+      // preserve any in-progress edits before rebuilding
+      const draftScores = {};
+      document.querySelectorAll("#sheet-table tbody input[data-id][data-act]").forEach(inp => {
+        const sid = Number(inp.dataset.id);
+        const actId = inp.dataset.act;
+        if (!draftScores[sid]) draftScores[sid] = {};
+        draftScores[sid][actId] = inp.value;
+      });
       tbody.innerHTML = "";
       theadRow.innerHTML = "<th>Student</th>";
 
@@ -1588,7 +1596,8 @@
         gradeSheetActivities.forEach(act => {
           // prefill from existing grades
           const existing = gradesCache.find(g => g.student_id === s.id && g.subject === subjectName && g.assessment === act.label);
-          const val = existing ? existing.raw_score : "";
+          const draftVal = draftScores[s.id]?.[act.id];
+          const val = draftVal !== undefined ? draftVal : (existing ? existing.raw_score : "");
           row.scores[act.id] = val;
           gradeSheetRowsData[s.id][act.id] = val;
           cells += `<td><input data-id="${s.id}" data-act="${act.id}" type="number" step="0.01" min="0" style="width:100%;" value="${val}"></td>`;
