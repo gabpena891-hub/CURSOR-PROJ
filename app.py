@@ -2475,6 +2475,15 @@ def delete_user(user_id: int):
         session.query(BehaviorReport).filter(BehaviorReport.reported_by == user_id).update(
             {BehaviorReport.reported_by: None}, synchronize_session=False
         )
+        session.query(Subject).filter(Subject.teacher_id == user_id).update(
+            {Subject.teacher_id: None}, synchronize_session=False
+        )
+        session.query(Section).filter(Section.adviser_id == user_id).update(
+            {Section.adviser_id: None}, synchronize_session=False
+        )
+        session.query(ScheduleEntry).filter(ScheduleEntry.teacher_id == user_id).update(
+            {ScheduleEntry.teacher_id: None}, synchronize_session=False
+        )
         session.delete(user)
         session.commit()
         return jsonify({"message": "User deleted"})
