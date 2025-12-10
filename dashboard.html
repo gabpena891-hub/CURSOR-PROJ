@@ -1623,7 +1623,7 @@
           const val = draftVal !== undefined ? draftVal : (existing ? existing.raw_score : "");
           row.scores[act.id] = val;
           gradeSheetRowsData[s.id][act.id] = val;
-          cells += `<td><input data-id="${s.id}" data-act="${act.id}" type="number" step="0.01" min="0" style="width:100%;" value="${val}"></td>`;
+          cells += `<td><input data-id="${s.id}" data-act="${act.id}" type="number" step="0.01" min="0" max="${act.max_score || 0}" style="width:100%;" value="${val}"></td>`;
         });
         cells += `<td><input data-id="${s.id}" data-field="final" type="number" step="0.01" min="0" max="100" style="width:100%;" readonly></td>`;
         tr.innerHTML = cells;
@@ -1634,6 +1634,17 @@
         inp.addEventListener("input", () => {
           const sid = Number(inp.dataset.id);
           const act = inp.dataset.act;
+          const maxVal = Number(inp.max);
+          const minVal = Number(inp.min);
+          let currentVal = Number(inp.value);
+          if (!isNaN(maxVal) && currentVal > maxVal) {
+            currentVal = maxVal;
+            inp.value = String(maxVal);
+          }
+          if (!isNaN(minVal) && currentVal < minVal) {
+            currentVal = minVal;
+            inp.value = String(minVal);
+          }
           const row = gradeSheetRows.find(r => r.student_id === sid);
           if (!row) return;
           row.scores[act] = inp.value;

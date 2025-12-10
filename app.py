@@ -1284,36 +1284,36 @@ if engine.dialect.name == "mssql":
     try:
         with engine.connect() as conn:
             # student_number
-            col_exists = conn.execute(
-                text(
-                    """
-                    SELECT 1 FROM sys.columns 
-                    WHERE Name = N'student_number' 
+        col_exists = conn.execute(
+            text(
+                """
+                SELECT 1 FROM sys.columns 
+                WHERE Name = N'student_number' 
                               AND Object_ID = Object_ID(N'students');
-                    """
-                )
-            ).first()
-            if not col_exists:
-                conn.execute(
-                    text("ALTER TABLE Students ADD student_number NVARCHAR(50) NULL UNIQUE;")
-                )
-                conn.commit()
+                """
+            )
+        ).first()
+        if not col_exists:
+            conn.execute(
+                text("ALTER TABLE Students ADD student_number NVARCHAR(50) NULL UNIQUE;")
+            )
+            conn.commit()
 
             # middle_name
-            col_exists = conn.execute(
-                text(
-                    """
-                    SELECT 1 FROM sys.columns 
-                    WHERE Name = N'middle_name' 
+        col_exists = conn.execute(
+            text(
+                """
+                SELECT 1 FROM sys.columns 
+                WHERE Name = N'middle_name' 
                               AND Object_ID = Object_ID(N'students');
-                    """
-                )
-            ).first()
-            if not col_exists:
-                conn.execute(
-                    text("ALTER TABLE Students ADD middle_name NVARCHAR(1) NULL;")
-                )
-                conn.commit()
+                """
+            )
+        ).first()
+        if not col_exists:
+            conn.execute(
+                text("ALTER TABLE Students ADD middle_name NVARCHAR(1) NULL;")
+            )
+            conn.commit()
 
             # approved
             col_exists = conn.execute(
@@ -2150,7 +2150,7 @@ def list_grades():
                 if st and parse_band_from_grade(st.grade_level) == band:
                     grades.append(g)
         else:
-            grades = query.order_by(Grade.recorded_on.desc()).all()
+        grades = query.order_by(Grade.recorded_on.desc()).all()
         return jsonify(
             [
                 {
@@ -3372,7 +3372,7 @@ def list_attendance():
                 if st and parse_band_from_grade(st.grade_level) == band:
                     records.append(r)
         else:
-            records = query.order_by(Attendance.attendance_date.desc()).all()
+        records = query.order_by(Attendance.attendance_date.desc()).all()
         return jsonify(
             [
                 {
