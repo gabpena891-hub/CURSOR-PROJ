@@ -1573,12 +1573,7 @@
         });
       }
       const studentSel = document.getElementById("assign-student");
-      if (studentSel) {
-        studentSel.innerHTML = `<option value="">Select student</option>`;
-        studentsCache.forEach(st => {
-          studentSel.innerHTML += `<option value="${st.id}">${st.first_name} ${st.last_name} ${st.grade_level ? "(G"+st.grade_level+")" : ""}</option>`;
-        });
-      }
+      updateAssignStudentOptions();
       const gradeSectionSel = document.getElementById("grade-section");
       if (gradeSectionSel) {
         gradeSectionSel.innerHTML = `<option value="">All sections</option>`;
@@ -1616,6 +1611,29 @@
         tr.innerHTML = `<td>${s.first_name} ${s.last_name}</td><td>${s.grade_level || "-"}</td>`;
         rosterBody.appendChild(tr);
       });
+    }
+
+    function updateAssignStudentOptions() {
+      const sectionSel = document.getElementById("assign-section");
+      const studentSel = document.getElementById("assign-student");
+      if (!studentSel) return;
+      studentSel.innerHTML = `<option value="">Select student</option>`;
+      const secId = Number(sectionSel?.value);
+      const section = sectionsCache.find(s => s.id === secId);
+      let sectionGrade = null;
+      if (section && section.grade_level) {
+        const m = String(section.grade_level).match(/(\d+)/);
+        sectionGrade = m ? m[1] : null;
+      }
+      studentsCache
+        .filter(st => {
+          if (!sectionGrade) return true;
+          const gm = String(st.grade_level || "").match(/(\d+)/);
+          return gm && gm[1] === sectionGrade;
+        })
+        .forEach(st => {
+          studentSel.innerHTML += `<option value="${st.id}">${st.first_name} ${st.last_name} ${st.grade_level ? "(G"+st.grade_level+")" : ""}</option>`;
+        });
     }
 
     async function assignStudentToSection() {
@@ -2464,7 +2482,10 @@
 
       const assignSectionSel = document.getElementById("assign-section");
       if (assignSectionSel) {
-        assignSectionSel.addEventListener("change", () => updateSectionRoster());
+        assignSectionSel.addEventListener("change", () => {
+          updateAssignStudentOptions();
+          updateSectionRoster();
+        });
       }
       const assignBtn = document.getElementById("assign-btn");
       if (assignBtn) {
