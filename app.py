@@ -1284,7 +1284,7 @@ if engine.dialect.name == "mssql":
     try:
         with engine.connect() as conn:
             # student_number
-        col_exists = conn.execute(
+            col_exists = conn.execute(
             text(
                 """
                 SELECT 1 FROM sys.columns 
@@ -1292,15 +1292,15 @@ if engine.dialect.name == "mssql":
                                   AND Object_ID = Object_ID(N'students');
                 """
             )
-        ).first()
-        if not col_exists:
-            conn.execute(
-                text("ALTER TABLE Students ADD student_number NVARCHAR(50) NULL UNIQUE;")
-            )
-            conn.commit()
+            ).first()
+            if not col_exists:
+                conn.execute(
+                    text("ALTER TABLE Students ADD student_number NVARCHAR(50) NULL UNIQUE;")
+                )
+                conn.commit()
 
             # middle_name
-        col_exists = conn.execute(
+            col_exists = conn.execute(
             text(
                 """
                 SELECT 1 FROM sys.columns 
@@ -1308,12 +1308,12 @@ if engine.dialect.name == "mssql":
                                   AND Object_ID = Object_ID(N'students');
                 """
             )
-        ).first()
-        if not col_exists:
-            conn.execute(
-                text("ALTER TABLE Students ADD middle_name NVARCHAR(1) NULL;")
-            )
-            conn.commit()
+            ).first()
+            if not col_exists:
+                conn.execute(
+                    text("ALTER TABLE Students ADD middle_name NVARCHAR(1) NULL;")
+                )
+                conn.commit()
 
             # approved
             col_exists = conn.execute(
