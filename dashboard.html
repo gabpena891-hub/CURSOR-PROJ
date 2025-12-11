@@ -1211,15 +1211,16 @@
       const filteredStudents = students.filter(s => !gradeSectionFilter || s.section_id === gradeSectionFilter);
       filteredStudents.forEach((s) => {
         const tr = document.createElement("tr");
+        const sec = sectionsCache.find(sec => sec.id === s.section_id);
+        const homeroomDisplay = sec?.adviser_name || s.homeroom_teacher || "-";
         tr.innerHTML = `<td>${s.student_number || "-"}</td>
                         <td>${s.first_name} ${s.middle_name ? s.middle_name + ". " : ""}${s.last_name}</td>
                         <td>${s.grade_level || "-"}</td>
-                        <td>${s.homeroom_teacher || "-"}</td>
+                        <td>${homeroomDisplay}</td>
                         <td>${s.date_of_birth ? `DOB: ${s.date_of_birth}` : "-"}</td>
                         <td style="display:flex; gap:8px; flex-wrap:wrap;">
                           <button data-id="${s.id}" class="print-report" style="padding:6px 10px;">Report PDF</button>
                           <button data-id="${s.id}" class="print-schedule" style="padding:6px 10px;">Schedule</button>
-                          <button data-id="${s.id}" class="set-homeroom" style="padding:6px 10px;">Set Homeroom</button>
                           <button data-id="${s.id}" class="delete-student" style="padding:6px 10px;">Delete</button>
                         </td>`;
         tbody.appendChild(tr);
@@ -1239,30 +1240,6 @@
             showToast("Student deleted", "success");
           } catch (ex) {
             showToast(ex.message || "Failed to delete student.", "error");
-          }
-        };
-      });
-      document.querySelectorAll(".set-homeroom").forEach(btn => {
-        btn.onclick = async () => {
-          const teacherNames = teachersCache.map(t => t.full_name || t.username).filter(Boolean);
-          const suggestion = teacherNames.slice(0, 6).join(", ");
-          const input = prompt(`Assign homeroom adviser${suggestion ? ` (e.g., ${suggestion})` : ""}:`, "");
-          if (input === null) return; // cancelled
-          const picked = input.trim();
-          if (!picked) { showToast("Homeroom adviser not set (empty).", "info"); return; }
-          if (teacherNames.length && !teacherNames.includes(picked)) {
-            showToast("Name not found in teachers list. Use exact teacher name.", "error");
-            return;
-          }
-          try {
-            await fetchJSON(`/students/${btn.dataset.id}`, {
-              method: "PUT",
-              body: JSON.stringify({ homeroom_teacher: picked }),
-              successMessage: "Homeroom adviser updated",
-            });
-            await refreshAll();
-          } catch (ex) {
-            showToast(ex.message || "Failed to set homeroom adviser.", "error");
           }
         };
       });

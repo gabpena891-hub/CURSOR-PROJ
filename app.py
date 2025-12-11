@@ -1284,7 +1284,7 @@ if engine.dialect.name == "mssql":
     try:
         with engine.connect() as conn:
             # student_number
-            col_exists = conn.execute(
+        col_exists = conn.execute(
             text(
                 """
                 SELECT 1 FROM sys.columns 
@@ -1292,15 +1292,15 @@ if engine.dialect.name == "mssql":
                                   AND Object_ID = Object_ID(N'students');
                 """
             )
-            ).first()
-            if not col_exists:
-                conn.execute(
-                    text("ALTER TABLE Students ADD student_number NVARCHAR(50) NULL UNIQUE;")
-                )
-                conn.commit()
+        ).first()
+        if not col_exists:
+            conn.execute(
+                text("ALTER TABLE Students ADD student_number NVARCHAR(50) NULL UNIQUE;")
+            )
+            conn.commit()
 
             # middle_name
-            col_exists = conn.execute(
+        col_exists = conn.execute(
             text(
                 """
                 SELECT 1 FROM sys.columns 
@@ -1308,12 +1308,12 @@ if engine.dialect.name == "mssql":
                                   AND Object_ID = Object_ID(N'students');
                 """
             )
-            ).first()
-            if not col_exists:
-                conn.execute(
-                    text("ALTER TABLE Students ADD middle_name NVARCHAR(1) NULL;")
-                )
-                conn.commit()
+        ).first()
+        if not col_exists:
+            conn.execute(
+                text("ALTER TABLE Students ADD middle_name NVARCHAR(1) NULL;")
+            )
+            conn.commit()
 
             # approved
             col_exists = conn.execute(
@@ -2157,7 +2157,7 @@ def list_grades():
                 if st and parse_band_from_grade(st.grade_level) == band:
                     grades.append(g)
         else:
-            grades = query.order_by(Grade.recorded_on.desc()).all()
+        grades = query.order_by(Grade.recorded_on.desc()).all()
         return jsonify(
             [
                 {
@@ -2868,8 +2868,13 @@ def assign_students_to_section(section_id: int):
                 return error_response(400, f"Student grade {stu_grade_num} does not match section grade {sec_grade_num}")
             valid_ids.append(sid)
         if valid_ids:
+            update_payload = {Student.section_id: section_id}
+            if section.adviser_id:
+                adviser = session.query(User).filter_by(id=section.adviser_id).first()
+                if adviser:
+                    update_payload[Student.homeroom_teacher] = adviser.full_name or adviser.username
             session.query(Student).filter(Student.id.in_(valid_ids)).update(
-                {Student.section_id: section_id}, synchronize_session=False
+                update_payload, synchronize_session=False
             )
             session.flush()
             try:
@@ -3379,7 +3384,7 @@ def list_attendance():
                 if st and parse_band_from_grade(st.grade_level) == band:
                     records.append(r)
         else:
-            records = query.order_by(Attendance.attendance_date.desc()).all()
+        records = query.order_by(Attendance.attendance_date.desc()).all()
         return jsonify(
             [
                 {
