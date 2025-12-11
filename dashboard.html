@@ -1130,6 +1130,7 @@
     }
 
     async function fetchJSON(path, options = {}) {
+      const { successMessage, ...rest } = options;
       const headers = { "Content-Type": "application/json" };
       if (currentUser?.role) headers["X-User-Role"] = currentUser.role;
       if (currentUser?.role === "Teacher" && teacherBand) headers["X-Teacher-Band"] = teacherBand;
@@ -1139,11 +1140,12 @@
       toggleLoading(true);
       try {
       const res = await fetch(`${API_BASE}${path}`, {
-          headers: { ...headers, ...(options.headers || {}) },
-        ...options,
+          headers: { ...headers, ...(rest.headers || {}) },
+        ...rest,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed");
+      if (successMessage) showToast(successMessage, "success");
       return data;
       } catch (err) {
         if (!options.silent) {
@@ -1853,7 +1855,8 @@
       try {
         await fetchJSON(`/sections/${secId}/students`, {
           method: "POST",
-          body: JSON.stringify({ student_ids: [studentId] })
+          body: JSON.stringify({ student_ids: [studentId] }),
+          successMessage: "Student assigned to section",
         });
         await refreshAll();
         document.getElementById("assign-student").value = "";
@@ -1902,7 +1905,7 @@
       });
       if (payloads.length === 0) { sheetError.textContent = "Enter at least one score."; return; }
       try {
-        await fetchJSON("/grades/bulk", { method: "POST", body: JSON.stringify(payloads) });
+        await fetchJSON("/grades/bulk", { method: "POST", body: JSON.stringify(payloads), successMessage: "Grades saved" });
         document.getElementById("sheet-status").textContent = "Saved.";
         await refreshAll();
       } catch (ex) {
@@ -1989,15 +1992,15 @@
         recorded_by: currentUser?.id,
       };
       if (entry.finalRecordId) {
-        await fetchJSON(`/grades/${entry.finalRecordId}`, { method: "PUT", body: JSON.stringify(payload) });
+        await fetchJSON(`/grades/${entry.finalRecordId}`, { method: "PUT", body: JSON.stringify(payload), successMessage: "Final grade updated" });
       } else {
-        await fetchJSON("/grades", { method: "POST", body: JSON.stringify(payload) });
+        await fetchJSON("/grades", { method: "POST", body: JSON.stringify(payload), successMessage: "Final grade saved" });
       }
     }
 
     async function deleteFinalGrade(id) {
       if (!id) return;
-      await fetchJSON(`/grades/${id}`, { method: "DELETE" });
+      await fetchJSON(`/grades/${id}`, { method: "DELETE", successMessage: "Final grade deleted" });
     }
 
     async function loadGradesTable() {
@@ -2538,7 +2541,7 @@
           homeroom_teacher: homeroomRaw || undefined,
         };
         try {
-          await fetchJSON("/students", { method: "POST", body: JSON.stringify(payload) });
+          await fetchJSON("/students", { method: "POST", body: JSON.stringify(payload), successMessage: "Student saved" });
           e.target.reset();
           await refreshAll();
         } catch (ex) { err.textContent = ex.message; err.style.display = "block"; }
@@ -2575,6 +2578,7 @@
                 subject_id: subjectId,
                 records,
               }),
+              successMessage: "Attendance saved",
             });
             err.style.color = "#34d399";
             err.textContent = "Attendance sheet saved.";
@@ -2628,7 +2632,7 @@
           message_body: document.getElementById("comm-body").value.trim(),
         };
         try {
-          await fetchJSON("/communications", { method: "POST", body: JSON.stringify(payload) });
+          await fetchJSON("/communications", { method: "POST", body: JSON.stringify(payload), successMessage: "Message sent" });
           e.target.reset();
           studentIdHidden.value = "";
           teacherNameHidden.value = "";
@@ -2653,7 +2657,7 @@
         };
         if (!payload.role) { err.textContent = "Select a role"; return; }
         try {
-          await fetchJSON("/users", { method: "POST", body: JSON.stringify(payload) });
+          await fetchJSON("/users", { method: "POST", body: JSON.stringify(payload), successMessage: "User created" });
           e.target.reset();
           await loadUsers();
         } catch (ex) { err.textContent = ex.message; }
@@ -2679,9 +2683,9 @@
           }
           try {
             if (editingSubjectId) {
-              await fetchJSON(`/subjects/${editingSubjectId}`, { method: "PUT", body: JSON.stringify(payload) });
+              await fetchJSON(`/subjects/${editingSubjectId}`, { method: "PUT", body: JSON.stringify(payload), successMessage: "Subject updated" });
             } else {
-              await fetchJSON("/subjects", { method: "POST", body: JSON.stringify(payload) });
+              await fetchJSON("/subjects", { method: "POST", body: JSON.stringify(payload), successMessage: "Subject created" });
             }
             resetSubjectForm();
             await loadSubjects();
@@ -2748,7 +2752,7 @@
           };
           if (!payload.name) { err.textContent = "Name is required."; return; }
           try {
-            await fetchJSON("/sections", { method: "POST", body: JSON.stringify(payload) });
+            await fetchJSON("/sections", { method: "POST", body: JSON.stringify(payload), successMessage: "Section created" });
             sectionForm.reset();
             await refreshAll();
           } catch (ex) { err.textContent = ex.message; }
@@ -3007,6 +3011,7 @@
           body: JSON.stringify({ section_id: secId, allow_saturday: allowSat })
         });
         status.textContent = `Created ${res.created.length} blocks${res.failed.length ? `, failed ${res.failed.length}` : ""}`;
+        showToast("Schedule generated", "success");
         const schedSel = document.getElementById("schedule-section");
         if (schedSel) schedSel.value = String(secId);
         await loadSectionSchedule();
@@ -3182,7 +3187,7 @@
           btn.addEventListener("click", async () => {
             if (!confirm("Delete this room?")) return;
             try {
-              await fetchJSON(`/rooms/${btn.dataset.id}`, { method: "DELETE" });
+              await fetchJSON(`/rooms/${btn.dataset.id}`, { method: "DELETE", successMessage: "Room deleted" });
               await loadRooms();
             } catch (ex) {
               if (status) status.textContent = ex.message;
@@ -3207,7 +3212,8 @@
       try {
         await fetchJSON("/rooms", {
           method: "POST",
-          body: JSON.stringify({ name, building, level })
+          body: JSON.stringify({ name, building, level }),
+          successMessage: "Room added"
         });
         document.getElementById("room-form").reset();
         if (status) status.textContent = "Room added.";
