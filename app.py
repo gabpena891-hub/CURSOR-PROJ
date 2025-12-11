@@ -2157,7 +2157,7 @@ def list_grades():
                 if st and parse_band_from_grade(st.grade_level) == band:
                     grades.append(g)
         else:
-        grades = query.order_by(Grade.recorded_on.desc()).all()
+            grades = query.order_by(Grade.recorded_on.desc()).all()
         return jsonify(
             [
                 {
