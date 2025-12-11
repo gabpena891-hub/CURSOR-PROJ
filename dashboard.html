@@ -1086,6 +1086,26 @@
       return null;
     }
 
+    function parseGradeNumber(val) {
+      const m = String(val || "").match(/(\d{1,2})/);
+      return m ? Number(m[1]) : null;
+    }
+
+    function inferGradeFromSubjectName(name) {
+      const m = String(name || "").match(/(?:grade\s*)?(1[0-2]|[7-9])(?!\d)/i);
+      return m ? Number(m[1]) : null;
+    }
+
+    function subjectMatchesGrade(subject, gradeNum) {
+      if (!subject || !gradeNum) return true;
+      const inferred = inferGradeFromSubjectName(subject.name);
+      const min = subject.grade_min ?? inferred;
+      const max = subject.grade_max ?? inferred;
+      const minOk = min == null || gradeNum >= min;
+      const maxOk = max == null || gradeNum <= max;
+      return minOk && maxOk;
+    }
+
     function logout() {
       localStorage.removeItem("spms_user");
       window.location.href = "index.html";
@@ -1357,8 +1377,14 @@
         };
         sheetSelect.appendChild(mkOpt("", "Select subject", true, true));
         const teacherId = currentUser?.role === "Teacher" ? currentUser.id : null;
+        const selectedSectionId = Number(document.getElementById("sheet-section")?.value) || gradeSheetSectionId;
+        const selectedSection = sectionsCache.find(s => s.id === selectedSectionId);
+        const sectionBand = classifyGradeLevel(selectedSection?.grade_level || selectedSection?.name);
+        const sectionGradeNum = parseGradeNumber(selectedSection?.grade_level || selectedSection?.name);
         subjects
           .filter(sub => !teacherId || sub.teacher_id === teacherId)
+          .filter(sub => !sectionBand || sub.level_band === sectionBand)
+          .filter(sub => subjectMatchesGrade(sub, sectionGradeNum))
           .forEach(sub => {
             sheetSelect.appendChild(mkOpt(sub.name, `${sub.name} (${sub.level_band}${sub.category ? " • " + sub.category : ""}${sub.track ? " • " + sub.track : ""})`));
           });
@@ -1401,6 +1427,7 @@
       const studentId = Number(document.getElementById("grade-student").value);
       const student = studentsCache.find(s => s.id === studentId);
       const band = classifyGradeLevel(student?.grade_level);
+      const gradeNum = parseGradeNumber(student?.grade_level);
       select.innerHTML = "";
       const mkOpt = (val, text, disabled = false, selected = false) => {
         const o = document.createElement("option");
@@ -1416,7 +1443,10 @@
       }
       select.appendChild(mkOpt("", `Select ${band} subject`, true, true));
       const teacherId = currentUser?.role === "Teacher" ? currentUser.id : null;
-      const filtered = subjectsCache.filter(s => s.level_band === band).filter(s => !teacherId || s.teacher_id === teacherId);
+      const filtered = subjectsCache
+        .filter(s => s.level_band === band)
+        .filter(s => subjectMatchesGrade(s, gradeNum))
+        .filter(s => !teacherId || s.teacher_id === teacherId);
       if (filtered.length === 0) {
         select.appendChild(mkOpt("", `No ${band} subjects available`, true, true));
         return;
@@ -1546,6 +1576,9 @@
       const subjectName = gradeSheetSubject || document.getElementById("sheet-subject").value;
       const subjectMeta = subjectsCache.find(s => s.name === subjectName);
       const band = subjectMeta?.level_band;
+      const selectedSectionId = Number(document.getElementById("sheet-section")?.value) || gradeSheetSectionId;
+      const selectedSection = sectionsCache.find(s => s.id === selectedSectionId);
+      const selectedSectionGrade = parseGradeNumber(selectedSection?.grade_level || selectedSection?.name);
       gradeSheetSubject = subjectName;
       updateSheetSectionOptions(band || null);
       syncScheduleSectionSelect();
@@ -1602,8 +1635,8 @@
       // students eligible
       const bandFilter = (currentUser?.role === "Teacher") ? band : (band || null);
       const eligible = bandFilter
-        ? studentsCache.filter(s => classifyGradeLevel(s.grade_level) === bandFilter)
-        : studentsCache;
+        ? studentsCache.filter(s => classifyGradeLevel(s.grade_level) === bandFilter && subjectMatchesGrade(subjectMeta, parseGradeNumber(s.grade_level)))
+        : studentsCache.filter(s => subjectMatchesGrade(subjectMeta, parseGradeNumber(s.grade_level)));
       const sectionSel = document.getElementById("sheet-section");
       const secFilter = Number(sectionSel?.value) || null;
       const eligibleFiltered = secFilter ? eligible.filter(s => s.section_id === secFilter) : eligible;
@@ -2741,6 +2774,7 @@
       if (sheetSection) {
         sheetSection.addEventListener("change", () => {
           gradeSheetSectionId = Number(sheetSection.value) || null;
+          loadSubjects(); // refresh subject list with section grade filter
           rebuildGradeSheetFromData();
         });
       }
