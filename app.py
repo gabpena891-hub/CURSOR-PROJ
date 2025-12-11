@@ -1897,6 +1897,13 @@ def create_student():
             section_obj = session.query(Section).filter_by(id=section_id).first()
             if not section_obj:
                 return error_response(400, "section_id not found")
+
+        adviser_name = None
+        if section_obj and section_obj.adviser_id:
+            adviser = session.query(User).filter_by(id=section_obj.adviser_id).first()
+            if adviser:
+                adviser_name = adviser.full_name or adviser.username
+
         student = Student(
             student_number=data["student_number"].strip(),
             first_name=data["first_name"].strip(),
@@ -1906,7 +1913,7 @@ def create_student():
             if data.get("date_of_birth")
             else None,
             grade_level=data.get("grade_level"),
-            homeroom_teacher=data.get("homeroom_teacher"),
+            homeroom_teacher=adviser_name or data.get("homeroom_teacher"),
             section_id=section_obj.id if section_obj else None,
         )
         session.add(student)

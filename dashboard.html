@@ -622,10 +622,11 @@
         <input id="student-last" placeholder="Last name" required />
         <input id="student-dob" type="date" />
         <input id="student-grade" placeholder="Grade level" />
-        <input id="student-homeroom" placeholder="Homeroom teacher" list="teacher-options" />
+        <select id="student-section">
+          <option value="">Section (optional)</option>
+        </select>
         <button type="submit">Add Student</button>
       </form>
-      <datalist id="teacher-options"></datalist>
       <p class="section-title">Directory</p>
       <div class="table-container">
         <table id="students-table">
@@ -1720,6 +1721,20 @@
       sectionsCache = sections;
       renderSectionsTable();
       populateSectionSelects();
+
+      // Populate student section select on the student form
+      const studentSection = document.getElementById("student-section");
+      if (studentSection) {
+        const currentVal = studentSection.value;
+        studentSection.innerHTML = `<option value="">Section (optional)</option>`;
+        sectionsCache.forEach(sec => {
+          const opt = document.createElement("option");
+          opt.value = sec.id;
+          opt.textContent = sec.name;
+          studentSection.appendChild(opt);
+        });
+        if (currentVal) studentSection.value = currentVal;
+      }
     }
 
     function renderSectionsTable() {
@@ -2549,13 +2564,7 @@
         const last5 = document.getElementById("student-number").value.trim();
         if (!/^\d{5}$/.test(last5)) { err.textContent = "Enter last 5 digits (numbers only)."; err.style.display = "block"; return; }
         const formattedNumber = `STU-${last5}`;
-        const homeroomRaw = document.getElementById("student-homeroom").value.trim();
-        const homeroomValid = teachersCache.some(t => (t.full_name || t.username) === homeroomRaw);
-        if (homeroomRaw && !homeroomValid) {
-          err.textContent = "Choose a homeroom teacher from the list.";
-          err.style.display = "block";
-          return;
-        }
+        const sectionId = Number(document.getElementById("student-section").value) || null;
         const payload = {
           student_number: formattedNumber,
           first_name: document.getElementById("student-first").value.trim(),
@@ -2563,7 +2572,7 @@
           last_name: document.getElementById("student-last").value.trim(),
           date_of_birth: document.getElementById("student-dob").value || undefined,
           grade_level: document.getElementById("student-grade").value || undefined,
-          homeroom_teacher: homeroomRaw || undefined,
+          section_id: sectionId || undefined,
         };
         try {
           await fetchJSON("/students", { method: "POST", body: JSON.stringify(payload), successMessage: "Student saved" });
