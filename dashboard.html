@@ -1036,6 +1036,7 @@
     let editingSubjectId = null;
     let gradeSheetRows = [];
     let gradeSheetActivities = [];
+    let gradeSheetActivitiesBySubject = {};
     let gradesCache = [];
     let teacherBand = null;
     let adminBandFilter = null;
@@ -1560,6 +1561,8 @@
     }
 
     function addGradeSheetActivity() {
+      const subjectName = gradeSheetSubject || document.getElementById("sheet-subject").value;
+      if (!subjectName) { showToast("Select a subject first.", "error"); return; }
       const name = prompt("Activity name (e.g., Quiz 1):", "");
       if (!name) return;
       const max = Number(prompt("Max score:", "20"));
@@ -1568,7 +1571,9 @@
       const compNorm = (comp || "").toUpperCase();
       if (!["WW","PT","QA"].includes(compNorm)) { showToast("Component must be WW, PT, or QA", "error"); return; }
       const id = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random();
-      gradeSheetActivities.push({ id, label: name, type: compNorm, max_score: max });
+      const list = gradeSheetActivitiesBySubject[subjectName] || [];
+      list.push({ id, label: name, type: compNorm, max_score: max });
+      gradeSheetActivitiesBySubject[subjectName] = list;
       rebuildGradeSheetFromData();
     }
 
@@ -1579,6 +1584,7 @@
       const selectedSectionId = Number(document.getElementById("sheet-section")?.value) || gradeSheetSectionId;
       const selectedSection = sectionsCache.find(s => s.id === selectedSectionId);
       const selectedSectionGrade = parseGradeNumber(selectedSection?.grade_level || selectedSection?.name);
+      gradeSheetActivities = gradeSheetActivitiesBySubject[subjectName] ? [...gradeSheetActivitiesBySubject[subjectName]] : [];
       gradeSheetSubject = subjectName;
       updateSheetSectionOptions(band || null);
       syncScheduleSectionSelect();
@@ -1623,6 +1629,7 @@
           }
         });
       }
+      gradeSheetActivitiesBySubject[subjectName] = gradeSheetActivities;
 
       // header columns
       gradeSheetActivities.forEach(act => {
